@@ -1,0 +1,261 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Contacts{% endblock %}
+
+{#  Cooling / suppression status, computed from the recontact rules. Red is a
+    hard lock; amber is a timer with a real date behind it; emerald means the
+    recontact rules record no block — send-time checks still apply. #}
+{% macro cooling_badge(row) %}
+{% if row.opted_out %}
+<span class="inline-flex shrink-0 items-center rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400"
+      title="This contact opted out. The address is on the permanent suppression list; REACH will never pitch it again.">Opted out — pitching locked</span>
+{% elif row.eligible_in_days %}
+<span class="inline-flex shrink-0 items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400"
+      title="Recontact rules: eligible again on {{ row.next_eligible_at[:10] }}.">Eligible in {{ row.eligible_in_days }} day{{ '' if row.eligible_in_days == 1 else 's' }}</span>
+{% else %}
+<span class="inline-flex shrink-0 items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400"
+      title="No cooling block on record. Suppression and sender checks still apply at send time.">Recontact OK</span>
+{% endif %}
+{% endmacro %}
+
+{#  Yield with its denominator: "2 of 5" is a fact; a bare percentage of
+    nothing is not. No submissions yet → UNKNOWN. #}
+{% macro yield_ratio(placed, submissions) %}
+{% if submissions %}
+<span class="tabular-nums text-gray-300">{{ placed }} of {{ submissions }}</span>
+<span class="text-[10px] text-faint">placed</span>
+{% else %}
+{{ ui.unknown() }}
+{% endif %}
+{% endmacro %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Contacts</h1>
+  <p class="mt-1 text-sm text-gray-400">Durable history per outlet: what was sent, what came back, and when it's acceptable to write again. Private notes never leave this account.</p>
+</section>
+
+{% if rows %}
+<section class="flex flex-wrap items-center gap-2" aria-label="Find a contact">
+  <label class="sr-only" for="contact-search">Search contacts</label>
+  <input id="contact-search" type="search" placeholder="Search outlet or domain…"
+         class="w-full max-w-xs rounded-lg border border-white/10 bg-[#111113] px-3 py-1.5 text-sm text-gray-100 placeholder:text-faint focus:border-amber-500/50 focus:outline-none">
+  <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
+    {% set suppressed = rows | selectattr('opted_out') | list | length %}
+    {% set cooling = rows | rejectattr('opted_out') | selectattr('eligible_in_days') | list | length %}
+    <button type="button" data-contact-filter="ALL" aria-pressed="true"
+            class="rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[11px] font-semibold text-amber-400">All <span class="tabular-nums">{{ rows | length }}</span></button>
+    <button type="button" data-contact-filter="OK" aria-pressed="false"
+            class="rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300">Recontact OK <span class="tabular-nums">{{ rows | length - suppressed - cooling }}</span></button>
+    <button type="button" data-contact-filter="COOLING" aria-pressed="false"
+            class="rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300">Cooling off <span class="tabular-nums">{{ cooling }}</span></button>
+    <button type="button" data-contact-filter="SUPPRESSED" aria-pressed="false"
+            class="rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300">Opted out <span class="tabular-nums">{{ suppressed }}</span></button>
+  </div>
+</section>
+
+{# Desktop table #}
+<section class="hidden overflow-hidden rounded-xl border border-white/[0.08] bg-[#111113] md:block">
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[860px] text-left text-sm">
+      <thead>
+        <tr class="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.15em] text-gray-400">
+          <th class="px-4 py-2.5 font-medium">Outlet</th>
+          <th class="px-4 py-2.5 font-medium">Type</th>
+          <th class="px-4 py-2.5 font-medium">Submissions</th>
+          <th class="px-4 py-2.5 font-medium">Responses / accepted</th>
+          <th class="px-4 py-2.5 font-medium">Placements</th>
+          <th class="px-4 py-2.5 font-medium">Cooling status</th>
+          <th class="px-4 py-2.5 font-medium">Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr data-contact-row data-search="{{ ((row.outlet_name or '') ~ ' ' ~ (row.outlet_url or '')) | lower }}"
+            data-cooling="{{ 'SUPPRESSED' if row.opted_out else ('COOLING' if row.eligible_in_days else 'OK') }}"
+            class="border-b border-white/[0.06] align-top last:border-0 hover:bg-white/[0.03]">
+          <td class="px-4 py-3">
+            <span class="block font-semibold text-gray-100">{{ row.outlet_name or 'Unnamed outlet' }}</span>
+            {% if row.outlet_url %}<a href="{{ row.outlet_url }}" target="_blank" rel="noopener noreferrer nofollow" class="text-[11px] text-sky-400 hover:underline">{{ row.outlet_url }}</a>{% endif %}
+          </td>
+          <td class="px-4 py-3"><span class="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{{ (row.outlet_kind or 'UNKNOWN').replace('_',' ') }}</span></td>
+          <td class="px-4 py-3 tabular-nums text-gray-300">{{ row.submissions }}</td>
+          <td class="px-4 py-3 tabular-nums text-gray-300">{{ row.responses }} / {{ row.accepted_responses }}</td>
+          <td class="px-4 py-3">{{ yield_ratio(row.placement_count, row.submissions) }}</td>
+          <td class="px-4 py-3">{{ cooling_badge(row) }}</td>
+          <td class="px-4 py-3">
+            <button type="button" class="notes-toggle rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                    data-relationship="{{ row.id }}" data-outlet="{{ row.outlet_name or 'this outlet' }}">
+              Notes{% if row.note_count %} <span class="tabular-nums text-amber-400">{{ row.note_count }}</span>{% endif %}
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# Mobile cards #}
+<section class="space-y-2 md:hidden">
+  {% for row in rows %}
+  <div data-contact-row data-search="{{ ((row.outlet_name or '') ~ ' ' ~ (row.outlet_url or '')) | lower }}"
+       data-cooling="{{ 'SUPPRESSED' if row.opted_out else ('COOLING' if row.eligible_in_days else 'OK') }}"
+       class="rounded-xl border border-white/[0.08] bg-[#111113] p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="truncate text-sm font-semibold text-gray-100">{{ row.outlet_name or 'Unnamed outlet' }}</div>
+        <div class="mt-0.5 text-[11px] uppercase tracking-wide text-faint">{{ (row.outlet_kind or 'UNKNOWN').replace('_',' ') }}</div>
+      </div>
+      {{ cooling_badge(row) }}
+    </div>
+    <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
+      <span class="tabular-nums">{{ row.submissions }} sent</span>
+      <span class="tabular-nums">{{ row.responses }} replies</span>
+      <span class="flex items-center gap-1">{{ yield_ratio(row.placement_count, row.submissions) }}</span>
+      <button type="button" class="notes-toggle ml-auto rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400"
+              data-relationship="{{ row.id }}" data-outlet="{{ row.outlet_name or 'this outlet' }}">
+        Notes{% if row.note_count %} <span class="tabular-nums text-amber-400">{{ row.note_count }}</span>{% endif %}
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<div id="contact-no-match" class="hidden">
+  {{ ui.empty('No contact matches this search and filter.') }}
+</div>
+
+{# Notes drawer: private to this account, loaded on demand. #}
+<div id="notes-drawer" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="notes-title">
+  <button type="button" id="notes-backdrop" class="absolute inset-0 h-full w-full bg-black/60" aria-label="Close notes"></button>
+  <div class="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-y-auto rounded-t-xl border-t border-white/[0.08] bg-[#111113] p-5 sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-none sm:w-96 sm:rounded-none sm:border-l sm:border-t-0">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h2 id="notes-title" class="text-sm font-semibold text-gray-100">Notes — <span id="notes-outlet"></span></h2>
+        <p class="mt-0.5 text-[11px] text-faint">Private to this account. Never sent anywhere.</p>
+      </div>
+      <button type="button" id="notes-close" class="rounded-lg p-1.5 text-gray-400 hover:bg-white/5 hover:text-gray-200" aria-label="Close">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-4 w-4" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+      </button>
+    </div>
+    <div id="notes-list" class="mt-4 space-y-2 text-xs text-gray-300"></div>
+    <form id="notes-form" class="mt-4 border-t border-white/[0.06] pt-3">
+      <label class="text-[10px] uppercase tracking-[0.18em] text-gray-400" for="notes-input">Add a note</label>
+      <textarea id="notes-input" rows="3" placeholder="e.g. Prefers concise pitches, no attachments"
+                class="mt-1 w-full rounded-lg border border-white/10 bg-[#090909] px-2.5 py-1.5 text-xs text-gray-200 placeholder:text-faint focus:border-amber-500/50 focus:outline-none"></textarea>
+      <button type="submit" class="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-400">Save note</button>
+    </form>
+  </div>
+</div>
+
+{% else %}
+{#  First run: nothing has been contacted yet, and this page will not
+    pretend otherwise. It explains what will accumulate here instead of
+    showing an invented example. #}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-6 text-center sm:p-10">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" class="mx-auto h-10 w-10 text-amber-500" aria-hidden="true">
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+  </svg>
+  <h2 class="mt-4 text-lg font-semibold text-gray-100">No contact history yet</h2>
+  <p class="mx-auto mt-2 max-w-md text-sm text-gray-400">
+    Once outreach starts, every outlet you contact gets a durable record here:
+  </p>
+  <ul class="mx-auto mt-4 max-w-md space-y-2 text-left text-xs text-gray-400">
+    <li class="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true"></span>
+      Submissions, replies and placements per outlet — real counts, with {{ ui.unknown() }} where nothing is measured yet
+    </li>
+    <li class="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true"></span>
+      Cooling-off timers: 60 days after a pitch, a year after a decline, permanent after an opt-out
+    </li>
+    <li class="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true"></span>
+      Private notes per curator that never leave this account
+    </li>
+  </ul>
+  <a href="{{ url_for('reach.campaigns_list') }}" class="mt-6 inline-block rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400">Launch an outreach campaign →</a>
+</section>
+{% endif %}
+
+{% if rows %}
+<script>
+  (function () {
+    const search = document.getElementById('contact-search');
+    const pills = document.querySelectorAll('[data-contact-filter]');
+    const items = document.querySelectorAll('[data-contact-row]');
+    const noMatch = document.getElementById('contact-no-match');
+    let activeFilter = 'ALL';
+
+    function apply() {
+      const query = (search.value || '').trim().toLowerCase();
+      let visible = 0;
+      items.forEach((item) => {
+        const matches = (!query || item.dataset.search.includes(query))
+          && (activeFilter === 'ALL' || item.dataset.cooling === activeFilter);
+        item.classList.toggle('hidden', !matches);
+        if (matches) visible += 1;
+      });
+      noMatch.classList.toggle('hidden', visible > 0);
+    }
+
+    search.addEventListener('input', apply);
+    pills.forEach((pill) => pill.addEventListener('click', () => {
+      activeFilter = pill.dataset.contactFilter;
+      pills.forEach((p) => {
+        const on = p === pill;
+        p.setAttribute('aria-pressed', on ? 'true' : 'false');
+        p.className = on
+          ? 'rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[11px] font-semibold text-amber-400'
+          : 'rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300';
+      });
+      apply();
+    }));
+
+    // --- notes drawer ---
+    const drawer = document.getElementById('notes-drawer');
+    const list = document.getElementById('notes-list');
+    const outletLabel = document.getElementById('notes-outlet');
+    const form = document.getElementById('notes-form');
+    const input = document.getElementById('notes-input');
+    let currentRelationship = null;
+
+    async function loadNotes() {
+      list.innerHTML = '<p class="text-faint">Loading…</p>';
+      const response = await fetch(`/reach/relationships/${currentRelationship}/notes`);
+      const data = await response.json();
+      if (!data.ok) { list.innerHTML = '<p class="text-red-400">Could not load notes.</p>'; return; }
+      list.innerHTML = data.notes.length
+        ? data.notes.map((n) => `<div class="rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2"><p></p><p class="mt-1 text-[10px] text-faint">${n.created_at.slice(0, 10)}</p></div>`).join('')
+        : '<p class="text-faint">No notes yet.</p>';
+      // textContent, not innerHTML, for the note bodies — they are user text.
+      list.querySelectorAll('div > p:first-child').forEach((el, i) => { el.textContent = data.notes[i].body; });
+    }
+
+    function openDrawer(relationshipId, outletName) {
+      currentRelationship = relationshipId;
+      outletLabel.textContent = outletName;
+      drawer.classList.remove('hidden');
+      loadNotes();
+    }
+    function closeDrawer() { drawer.classList.add('hidden'); currentRelationship = null; }
+
+    document.querySelectorAll('.notes-toggle').forEach((button) =>
+      button.addEventListener('click', () => openDrawer(button.dataset.relationship, button.dataset.outlet)));
+    document.getElementById('notes-close').addEventListener('click', closeDrawer);
+    document.getElementById('notes-backdrop').addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!input.value.trim() || !currentRelationship) return;
+      const data = await reachPost(`/reach/relationships/${currentRelationship}/notes`, { body: input.value.trim() });
+      if (data.ok) { input.value = ''; reachToast('Note saved', true); loadNotes(); }
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

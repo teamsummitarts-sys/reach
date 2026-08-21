@@ -1,0 +1,100 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Placements — {{ campaign.name }}{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Placements</h1>
+  <p class="mt-1 text-sm text-gray-400">The wins that are proven. Every placement requires an evidence URL — acceptance alone is not one.</p>
+</section>
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Record a placement', 'A placement cannot be created without an evidence source. Acceptance alone is not enough.') }}
+  <div class="mt-4 space-y-2">
+    {% for target in accepted %}
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.08] bg-white/5 px-3 py-2">
+      <span class="min-w-0 flex-1 truncate text-sm font-semibold">{{ target.outlet_name }}</span>
+      {{ ui.status_badge(target.status) }}
+      <select class="placement-evidence rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-[11px]" data-target="{{ target.id }}">
+        {% for source in evidence_sources %}<option value="{{ source }}">{{ source.replace('_',' ') }}</option>{% endfor %}
+      </select>
+      <input class="placement-url w-56 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-[11px]"
+             placeholder="Placement URL" data-target="{{ target.id }}">
+      <button type="button" class="record-placement shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/20"
+              data-target="{{ target.id }}">Record</button>
+    </div>
+    {% else %}
+    {{ ui.empty('No accepted or submitted targets yet.') }}
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  {{ ui.section('Verified placements') }}
+  <div class="mt-3 space-y-3">
+    {% for placement in placements %}
+    {% set value = values.get(placement.id) %}
+    <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold">{{ placement.outlet_name }}</div>
+          <div class="mt-0.5 text-xs text-gray-400">{{ placement.recording_title }}{% if placement.program_name %} · {{ placement.program_name }}{% endif %}</div>
+          {% if placement.url %}
+          <a href="{{ placement.url }}" target="_blank" rel="noopener noreferrer nofollow" class="mt-1 block truncate text-[11px] text-amber-500/80 hover:text-amber-400">{{ placement.url }}</a>
+          {% endif %}
+        </div>
+        <div class="shrink-0 text-right text-[11px] text-gray-400">
+          <div class="uppercase tracking-wide">{{ placement.evidence_source.replace('_',' ') }}</div>
+          <div>added {{ placement.added_date }}</div>
+          {% if placement.removed_date %}<div class="text-red-400">removed {{ placement.removed_date }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="mt-3 border-t border-white/[0.08] pt-3">
+        <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Placement value</div>
+        {% if value and value.state == 'MEASURED' %}
+        <div class="mt-1 flex items-baseline gap-2">
+          {{ ui.score_pill(value.score) }}
+          <span class="text-[11px] text-faint">{{ value.note }}</span>
+        </div>
+        {% else %}
+        <div class="mt-1 text-[11px] text-faint">UNMEASURED — {{ value.note if value else 'no outcome metrics recorded' }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    {{ ui.empty('No placements recorded. REACH will never claim one without evidence.') }}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Attribution', 'Observed change, not asserted cause.') }}
+  <div class="mt-3 space-y-2">
+    {% for row in attribution %}
+    <div class="rounded-lg border border-white/[0.08] bg-white/5 px-3 py-2">
+      <div class="flex items-baseline justify-between gap-2">
+        <span class="text-xs font-semibold">{{ row.metric.replace('_',' ') }}</span>
+        <span class="text-[11px] uppercase tracking-wide text-gray-400">{{ row.get('attribution', row.state).replace('_',' ') }}</span>
+      </div>
+      <div class="mt-1 text-[11px] text-faint">{{ row.note }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('.record-placement');
+    if (!button) return;
+    const targetId = button.dataset.target;
+    const source = document.querySelector(`.placement-evidence[data-target="${targetId}"]`).value;
+    const url = document.querySelector(`.placement-url[data-target="${targetId}"]`).value;
+    const data = await reachPost(`/reach/targets/${targetId}/placement`, {
+      evidence_source: source, url: url,
+    });
+    if (data.ok) { reachToast('Placement recorded with evidence', true); setTimeout(() => window.location.reload(), 600); }
+  });
+</script>
+{% endblock %}

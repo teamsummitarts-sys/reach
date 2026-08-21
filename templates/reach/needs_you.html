@@ -1,0 +1,178 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Needs You{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Needs You</h1>
+  <p class="mt-1 text-sm text-gray-400">Submissions only a human may make — forms, logins, platform tools — with the answers prepared for you. Your answers sit on the left; the destination on the right.</p>
+</section>
+
+<div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by task group">
+  <a href="{{ url_for('reach.needs_you', campaign_id=selected_campaign) }}"
+     class="rounded-full border px-3 py-1 text-[11px] font-semibold {{ 'border-amber-500/40 bg-amber-500/15 text-amber-400' if not selected_group else 'border-white/10 text-gray-400 hover:text-gray-300' }}">All tasks</a>
+  {% for group in groups %}
+  <a href="{{ url_for('reach.needs_you', group=group.label, campaign_id=selected_campaign) }}"
+     class="rounded-full border px-3 py-1 text-[11px] font-semibold {{ 'border-amber-500/40 bg-amber-500/15 text-amber-400' if selected_group == group.label else 'border-white/10 text-gray-400 hover:text-gray-300' }}">
+    {{ group.label }} <span class="tabular-nums">{{ group.count }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+{% if campaigns | length > 1 %}
+<div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by campaign">
+  <a href="{{ url_for('reach.needs_you', group=selected_group) }}"
+     class="rounded-md border px-2.5 py-1 text-[11px] font-semibold {{ 'border-amber-500/40 bg-amber-500/15 text-amber-400' if not selected_campaign else 'border-white/10 text-gray-400 hover:text-gray-300' }}">All campaigns</a>
+  {% for campaign in campaigns %}
+  <a href="{{ url_for('reach.needs_you', campaign_id=campaign.id, group=selected_group) }}"
+     class="rounded-md border px-2.5 py-1 text-[11px] font-semibold {{ 'border-amber-500/40 bg-amber-500/15 text-amber-400' if selected_campaign == campaign.id else 'border-white/10 text-gray-400 hover:text-gray-300' }}">{{ campaign.recording_title }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="space-y-3">
+  {% for task in tasks %}
+  <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold">{{ task.title }}</h2>
+          <span class="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{{ task.provider.replace('_',' ') }}</span>
+          {% if task.risk_band %}{{ ui.risk_badge(task.risk_band) }}{% endif %}
+        </div>
+        <p class="mt-1.5 text-xs text-gray-400">{{ task.action }}</p>
+        <p class="mt-1 text-[11px] text-amber-400/80">Why it isn't automated: {{ task.reason }}</p>
+      </div>
+      <div class="shrink-0 text-right text-[11px] text-gray-400">
+        <div>{{ task.effort }}</div>
+        {% if task.cost %}<div class="text-amber-400">{{ task.cost }} {{ task.currency or '' }}</div>{% endif %}
+        {% if task.deadline %}<div>Due {{ task.deadline[:10] }}</div>{% endif %}
+        <div>{{ ui.status_badge(task.status) }}</div>
+      </div>
+    </div>
+
+    {# Speed run: answers on the left, the destination and its verdicts on the
+       right. On a phone the answers stack first — copy, then go. #}
+    <div class="mt-4 grid grid-cols-1 gap-4 border-t border-white/[0.06] pt-4 lg:grid-cols-2">
+
+      <div class="min-w-0">
+        <div class="flex items-center justify-between gap-2">
+          <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Your answers — copy-ready</div>
+          {% if task.fields %}
+          <button type="button" class="copy-fields rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5"
+                  data-fields="{{ task.fields | tojson | forceescape }}">Copy all</button>
+          {% endif %}
+        </div>
+        {% if task.fields %}
+        <div class="mt-2 space-y-1">
+          {% for field in task.fields %}
+          <div class="group flex items-start gap-2 rounded border border-white/[0.08] bg-white/5 px-2.5 py-1.5 text-[11px]">
+            <span class="w-32 shrink-0 pt-0.5 text-gray-400 sm:w-40">{{ field.label }}</span>
+            {% if field.value == 'UNKNOWN' or (field.value or '').startswith('UNKNOWN') %}
+            <span class="min-w-0 flex-1">{{ ui.unknown() }}{% if field.value != 'UNKNOWN' %} <span class="text-faint">{{ field.value[7:] }}</span>{% endif %}</span>
+            {% else %}
+            <span class="min-w-0 flex-1 break-words text-gray-300">{{ field.value }}</span>
+            <button type="button" class="copy-one shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-faint opacity-100 transition-opacity hover:bg-white/5 hover:text-gray-300 lg:opacity-0 lg:group-hover:opacity-100"
+                    data-value="{{ field.value | forceescape }}" aria-label="Copy {{ field.label }}">Copy</button>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="mt-2 text-[11px] text-faint">No prepared fields for this task.</p>
+        {% endif %}
+
+        {% if task.pitch_text %}
+        <details class="mt-3">
+          <summary class="cursor-pointer text-[10px] uppercase tracking-[0.18em] text-gray-400 hover:text-gray-300">Prepared pitch</summary>
+          <pre class="mt-2 whitespace-pre-wrap rounded border border-white/[0.08] bg-[#090909] p-3 font-sans text-[11px] leading-relaxed text-gray-400">{{ task.pitch_text }}</pre>
+          <button type="button" class="copy-pitch mt-2 rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5"
+                  data-pitch="{{ task.pitch_text | forceescape }}">Copy pitch</button>
+        </details>
+        {% endif %}
+      </div>
+
+      <div class="min-w-0 lg:border-l lg:border-white/[0.06] lg:pl-4">
+        <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Destination</div>
+        {% if task.destination_url %}
+        <a href="{{ task.destination_url }}" target="_blank" rel="noopener noreferrer nofollow"
+           class="mt-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20">
+          <span class="min-w-0 truncate">{{ task.destination_url }}</span>
+          <span class="shrink-0">Open ↗</span>
+        </a>
+        {% else %}
+        <p class="mt-2 flex items-center gap-1.5 text-[11px] text-faint">Destination {{ ui.unknown() }} — no verified route was recorded for this outlet.</p>
+        {% endif %}
+
+        {% if task.eligibility %}
+        <div class="mt-3">
+          <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Eligibility</div>
+          <div class="mt-2 grid grid-cols-1 gap-1">
+            {% for item in task.eligibility %}
+            <div class="flex items-start gap-2 text-[11px]">
+              <span class="mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border text-[8px] font-bold
+                {{ 'border-emerald-500/40 text-emerald-400' if item.ok else ('border-gray-600 text-faint' if item.ok is none else 'border-amber-500/40 text-amber-400') }}">
+                {{ '✓' if item.ok else ('?' if item.ok is none else '!') }}
+              </span>
+              <span class="text-gray-400">
+                {{ item.label }}{% if item.get('detail') %} <span class="text-faint">— {{ item.detail }}</span>{% endif %}
+              </span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-white/[0.06] pt-3">
+          <button type="button" data-post="{{ url_for('reach.task_status', task_id=task.id) }}"
+                  data-payload='{"status": "SUBMITTED"}' data-success="Marked submitted"
+                  class="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/20">Mark submitted</button>
+          <button type="button" data-post="{{ url_for('reach.task_status', task_id=task.id) }}"
+                  data-payload='{"status": "SNOOZED", "days": 7}' data-success="Snoozed for 7 days"
+                  class="rounded-md border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-gray-400 hover:bg-white/5">Snooze</button>
+          <button type="button" data-post="{{ url_for('reach.task_status', task_id=task.id) }}"
+                  data-payload='{"status": "SKIPPED"}' data-success="Skipped"
+                  class="rounded-md border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-gray-400 hover:bg-white/5">Skip</button>
+          <button type="button" data-post="{{ url_for('reach.task_status', task_id=task.id) }}"
+                  data-payload='{"status": "BROKEN_ROUTE"}' data-success="Route reported broken"
+                  class="rounded-md border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-gray-400 hover:bg-white/5">Report broken route</button>
+        </div>
+        <p class="mt-2 text-[10px] text-faint">Opening the destination does not mark this submitted.</p>
+      </div>
+    </div>
+  </section>
+  {% else %}
+  {% if selected_group %}
+  {{ ui.empty('Nothing open in this group.', url_for('reach.needs_you'), 'Show all tasks') }}
+  {% else %}
+  {{ ui.empty('Nothing needs you right now.') }}
+  {% endif %}
+  {% endfor %}
+</div>
+
+<script>
+  document.addEventListener('click', async (event) => {
+    const oneButton = event.target.closest('.copy-one');
+    if (oneButton) {
+      await navigator.clipboard.writeText(oneButton.dataset.value);
+      reachToast('Copied', true);
+      return;
+    }
+    const fieldsButton = event.target.closest('.copy-fields');
+    if (fieldsButton) {
+      const fields = JSON.parse(fieldsButton.dataset.fields);
+      const text = fields.map((f) => `${f.label}: ${f.value}`).join('\n');
+      await navigator.clipboard.writeText(text);
+      reachToast('Field answers copied', true);
+      return;
+    }
+    const pitchButton = event.target.closest('.copy-pitch');
+    if (pitchButton) {
+      await navigator.clipboard.writeText(pitchButton.dataset.pitch);
+      reachToast('Pitch copied', true);
+    }
+  });
+</script>
+{% endblock %}

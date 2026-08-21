@@ -1,0 +1,241 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — {{ target.outlet_name }}{% endblock %}
+
+{% block reach_content %}
+
+<a href="{{ url_for('reach.opportunities', campaign_id=campaign.id) }}" class="inline-flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-200">
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5" aria-hidden="true"><path d="M13 4l-6 6 6 6"/></svg>
+  Opportunities
+</a>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+  <div class="space-y-6 lg:col-span-2">
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="truncate text-lg font-semibold">{{ target.outlet_name }}</h1>
+          <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+            <span class="uppercase tracking-wide">{{ (target.outlet_kind or 'UNKNOWN').replace('_',' ') }}</span>
+            {% if outlet.url %}<a href="{{ outlet.url }}" rel="noopener noreferrer nofollow" target="_blank" class="text-amber-400 hover:text-amber-300">{{ outlet.domain }} ↗</a>{% endif %}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          {{ ui.match_pill(score.score if score else none) }}
+          {{ ui.status_badge(target.status) }}
+        </div>
+      </div>
+
+      {% if outlet.description %}
+      <p class="mt-3 text-sm text-gray-400">{{ outlet.description }}</p>
+      {% endif %}
+
+      <div class="mt-4 grid grid-cols-2 gap-4 border-t border-white/[0.06] pt-4 sm:grid-cols-4">
+        {{ ui.metric(risk.score if risk else 'UNKNOWN', 'Risk score') }}
+        <div>
+          <div class="mt-1">{{ ui.risk_badge(risk.band if risk else None) }}</div>
+          <div class="mt-1.5 text-[10px] uppercase tracking-[0.18em] text-gray-400">Risk level</div>
+        </div>
+        {{ ui.metric(target.submissions_open.replace('_',' '), 'Submissions') }}
+        {{ ui.metric(route.method.replace('_',' ') if route else 'NONE', 'Route') }}
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Why this score?', 'Every component stores its own value. Follower count is deliberately a small input.') }}
+      <div class="mt-3 space-y-1.5">
+        {% for reason in score_reasons %}
+        <div class="flex items-start gap-2 text-sm">
+          <span class="mt-0.5 w-3 shrink-0 text-center font-bold {{ 'text-emerald-400' if reason.sign == '+' else ('text-red-400' if reason.sign == '-' else 'text-faint') }}">{{ reason.sign }}</span>
+          <span class="{{ 'text-gray-300' if reason.sign == '+' else 'text-gray-400' }}">{{ reason.text }}</span>
+        </div>
+        {% else %}
+        {{ ui.empty('No score has been computed for this target yet.') }}
+        {% endfor %}
+      </div>
+
+      {% if score_components %}
+      {# Simple on top, serious underneath: the verdict is above; the raw
+         component values live behind this disclosure. #}
+      <details class="group mt-4 border-t border-white/[0.06] pt-3">
+        <summary class="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-gray-200 [&::-webkit-details-marker]:hidden">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden="true"><path d="M7 4l6 6-6 6"/></svg>
+          Score components
+        </summary>
+        <div class="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {% for key, value in score_components.items() %}
+          <div class="flex items-center gap-2 text-[11px]">
+            <span class="w-40 shrink-0 truncate text-gray-400">{{ component_labels.get(key, key) }}</span>
+            <span class="h-1 flex-1 overflow-hidden rounded-full bg-white/5">
+              {% if value is not none %}<span class="block h-full rounded-full bg-amber-500/60" style="width: {{ (value * 100) | round | int }}%"></span>{% endif %}
+            </span>
+            <span class="flex w-20 shrink-0 justify-end tabular-nums text-gray-400">{% if value is none %}{{ ui.unknown() }}{% else %}{{ (value * 100) | round | int }}{% endif %}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </section>
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Why do we know this?', 'Every claim carries its receipt: the page it came from, the outlet\'s own words, and when it was read.') }}
+      <div class="mt-3 space-y-2">
+        {% for item in outlet_evidence %}
+        {{ ui.receipt(item.field.replace('_',' ') ~ ': ' ~ item.value,
+                      source_url=item.source_url,
+                      excerpt=item.excerpt,
+                      retrieved=item.retrieved_at,
+                      confidence=((item.confidence * 100) | round | int ~ '% confident')) }}
+        {% if item.official or item.stale or item.corroborating_domains %}
+        <div class="-mt-1 flex flex-wrap items-center gap-2 px-3 pb-1 text-[10px] uppercase tracking-wide text-faint">
+          {% if item.official %}<span class="text-emerald-500">official source</span>{% endif %}
+          {% if item.stale %}<span class="text-amber-500">stale — worth re-checking</span>{% endif %}
+          <span>{{ item.corroborating_domains }} independent domain(s)</span>
+          {% if item.verified_at %}<span>verified {{ item.verified_at[:10] }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        {{ ui.empty('No evidence recorded.') }}
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if draft %}
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      <div class="flex flex-wrap items-baseline justify-between gap-3">
+        {{ ui.section('Drafted pitch') }}
+        <a href="{{ url_for('reach.review', campaign_id=campaign.id, target_id=target.id) }}" class="text-xs font-semibold text-amber-400 hover:underline">Open in review</a>
+      </div>
+      <div class="mt-3 rounded-lg border border-white/[0.06] bg-[#090909] p-4">
+        <div class="text-xs font-semibold text-gray-300">{{ draft.subject }}</div>
+        <pre class="mt-3 whitespace-pre-wrap font-sans text-xs leading-relaxed text-gray-400">{{ draft.body }}</pre>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="space-y-6">
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Next step') }}
+      <div class="mt-3 space-y-2">
+        {% if not draft %}
+        <button type="button" data-post="{{ url_for('reach.generate_draft', target_id=target.id) }}"
+                data-success="Pitch drafted — opening the review"
+                data-next="{{ url_for('reach.review', campaign_id=campaign.id, target_id=target.id) }}"
+                class="w-full rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-black hover:bg-amber-400">
+          Draft the pitch
+        </button>
+        {% else %}
+        <a href="{{ url_for('reach.review', campaign_id=campaign.id, target_id=target.id) }}"
+           class="block w-full rounded-lg bg-amber-500 px-3 py-2 text-center text-xs font-semibold text-black hover:bg-amber-400">
+          Review the pitch
+        </a>
+        {% endif %}
+        <select id="reject-reason" aria-label="Reason for disqualifying" class="w-full rounded-lg border border-white/10 bg-[#090909] px-2.5 py-1.5 text-xs">
+          {% for reason in rejection_reasons %}<option value="{{ reason }}">{{ reason }}</option>{% endfor %}
+        </select>
+        <button type="button" id="disqualify"
+                class="w-full rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-gray-400 hover:bg-white/5">
+          Disqualify
+        </button>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Contact and route') }}
+      {% if contact_method %}
+      <dl class="mt-3 space-y-1.5 text-xs">
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Address</dt><dd class="font-mono text-gray-200">{{ contact_method.value_preview }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Category</dt><dd class="text-right text-gray-200">{{ contact_method.category.replace('_',' ') }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Independent sources</dt><dd class="text-gray-200">{{ sendability.independent_domains }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Verified</dt><dd class="text-gray-200">{% if contact_method.verified_at %}{{ contact_method.verified_at[:10] }}{% else %}{{ ui.unknown() }}{% endif %}</dd></div>
+      </dl>
+      <div class="mt-3 rounded-lg border px-3 py-2 text-[11px] {{ 'border-emerald-500/20 bg-emerald-500/5 text-emerald-300' if sendability.sendable else 'border-amber-500/20 bg-amber-500/5 text-amber-300' }}">
+        {% if sendability.sendable %}
+          Eligible for direct email.
+        {% else %}
+          <div class="font-semibold">Not sendable</div>
+          <ul class="mt-1 list-disc space-y-0.5 pl-4">
+            {% for blocker in sendability.blockers %}<li>{{ blocker }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+      {% else %}
+      {{ ui.empty('No contact method resolved. This opportunity routes to a human action.') }}
+      {% endif %}
+
+      {% if route %}
+      <div class="mt-3 border-t border-white/[0.06] pt-3 text-[11px] text-gray-400">
+        <div>Method: <span class="text-gray-300">{{ route.method.replace('_',' ') }}</span></div>
+        <div>Cost: <span class="text-gray-300">{{ route.cost_model.replace('_',' ') }}{% if route.cost_amount %} · {{ route.cost_amount }} {{ route.currency or '' }}{% endif %}</span></div>
+        {% if route.instructions %}<div class="mt-1 italic">“{{ route.instructions[:200] }}”</div>{% endif %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Outreach decision') }}
+      {% if compliance_record %}
+      <div class="mt-2 flex items-center gap-2">
+        {{ ui.decision_label(compliance_decision) }}
+        <span class="text-[10px] uppercase tracking-wide text-faint">{{ (compliance_decision or '').replace('_',' ') }}</span>
+      </div>
+      <dl class="mt-3 space-y-1.5 text-[11px]">
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Recipient country</dt><dd class="text-gray-300">{% if compliance_record.recipientCountry %}{{ compliance_record.recipientCountry }}{% else %}{{ ui.unknown() }}{% endif %}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Sender country</dt><dd class="text-gray-300">{{ compliance_record.senderCountry }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-gray-400">Outreach category</dt><dd class="text-right text-gray-300">{{ compliance_record.outreachCategory.replace('_',' ') }}</dd></div>
+      </dl>
+      <p class="mt-2 text-[11px] leading-relaxed text-gray-400">{{ compliance_record.lawfulBasisRecord }}</p>
+      <ul class="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-gray-400">
+        {% for reason in compliance_record.reasons %}<li>{{ reason }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      {{ ui.empty('No outreach decision recorded yet.') }}
+      {% endif %}
+    </section>
+
+    {% if risk_signals %}
+    <section class="rounded-xl border border-orange-500/15 bg-[#111113] p-5">
+      {{ ui.section('Risk indicators') }}
+      <p class="mt-2 text-[11px] text-gray-400">Potential risk indicators detected. This is an observation from the evidence reviewed, not an accusation.</p>
+      <ul class="mt-2 space-y-1 text-[11px] text-orange-300">
+        {% for signal in risk_signals %}<li>· {{ signal.label }}</li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if related_outlets %}
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Consolidated', 'Same submission route — one message, not several.') }}
+      <ul class="mt-2 space-y-1 text-[11px] text-gray-400">
+        {% for related in related_outlets if related %}<li>· {{ related.name }}</li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Relationship history') }}
+      <dl class="mt-3 space-y-1.5 text-[11px]">
+        <div class="flex justify-between"><dt class="text-gray-400">Submissions</dt><dd class="text-gray-300">{{ relationship_history.submissions | length }}</dd></div>
+        <div class="flex justify-between"><dt class="text-gray-400">Responses</dt><dd class="text-gray-300">{{ relationship_history.responses | length }}</dd></div>
+        <div class="flex justify-between"><dt class="text-gray-400">Placements</dt><dd class="text-gray-300">{{ relationship_history.placements | length }}</dd></div>
+      </dl>
+    </section>
+  </div>
+</div>
+
+<script>
+  document.getElementById('disqualify').addEventListener('click', async () => {
+    const data = await reachPost('{{ url_for("reach.set_target_status", target_id=target.id) }}', {
+      status: 'DISQUALIFIED',
+      rejection_reason: document.getElementById('reject-reason').value,
+      reason: 'Disqualified by reviewer',
+    });
+    if (data.ok) { reachToast('Disqualified', true); setTimeout(() => window.location.reload(), 600); }
+  });
+</script>
+{% endblock %}

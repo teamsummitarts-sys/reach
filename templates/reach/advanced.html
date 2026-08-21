@@ -1,0 +1,105 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Advanced{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Advanced &amp; system</h1>
+  <p class="mt-1 text-sm text-gray-400">The machinery. You rarely need this — but none of it is hidden, and none of it is removable.</p>
+</section>
+
+<section class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+  <a href="{{ url_for('reach.catalog_view') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-sm font-semibold text-gray-100">My music</div>
+    <p class="mt-1 text-xs text-gray-400">Tracks, rights attestations, release readiness.</p>
+  </a>
+  <a href="{{ url_for('reach.contacts_view') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-sm font-semibold text-gray-100">Contacts</div>
+    <p class="mt-1 text-xs text-gray-400">Every outlet relationship and its history.</p>
+  </a>
+  <a href="{{ url_for('reach.needs_you') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-sm font-semibold text-gray-100">Needs You</span>
+      {% if needs_you_count %}<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold tabular-nums text-amber-400">{{ needs_you_count }}</span>{% endif %}
+    </div>
+    <p class="mt-1 text-xs text-gray-400">Submissions only a human may make: forms, logins, platform tools.</p>
+  </a>
+  <a href="{{ url_for('reach.outreach_setup') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-sm font-semibold text-gray-100">Sender setup</span>
+      <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {{ 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' if sender_health.ready else 'border-amber-500/30 bg-amber-500/10 text-amber-400' }}">{{ 'Ready' if sender_health.ready else 'Not ready' }}</span>
+    </div>
+    <p class="mt-1 text-xs text-gray-400">Email identity, DNS checks, the postal address the law requires.</p>
+  </a>
+  <a href="{{ url_for('reach.providers_view') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-sm font-semibold text-gray-100">Connections</span>
+      <span class="text-[11px] tabular-nums text-gray-400">{{ provider_counts.connected }} of {{ provider_counts.total }} connected</span>
+    </div>
+    <p class="mt-1 text-xs text-gray-400">Every provider REACH can talk to, with its policy, quota and kill switch.</p>
+  </a>
+  <a href="{{ url_for('reach.settings_view') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-sm font-semibold text-gray-100">Settings &amp; safety</div>
+    <p class="mt-1 text-xs text-gray-400">Feature flags, emergency stops, the suppression list, the audit log.</p>
+  </a>
+</section>
+
+{% if provider_counts.attention %}
+<section class="rounded-xl border border-amber-500/25 bg-[#111113] p-5">
+  {{ ui.section('Connections that need a look') }}
+  <div class="mt-3 space-y-1.5">
+    {% for state in provider_counts.attention %}
+    <a href="{{ url_for('reach.providers_view') }}#{{ state.provider }}" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2 text-xs hover:bg-white/10">
+      <span class="font-semibold text-gray-100">{{ state.display_name }}</span>
+      <span class="flex items-center gap-2">
+        {% if state.kill_switch %}<span class="font-semibold text-red-400">Kill switch on</span>{% endif %}
+        {% if state.last_error %}<span class="max-w-[280px] truncate text-gray-400">{{ state.last_error }}</span>{% endif %}
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if onboarding_capabilities %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Not connected yet', 'REACH runs without any of these. Each one changes what it can actually do.') }}
+  <div class="mt-3 space-y-2">
+    {% for item in onboarding_capabilities %}
+    <div class="rounded-lg border px-3 py-2.5 {{ 'border-amber-500/25 bg-amber-500/5' if item.severity == 'BLOCKING' else 'border-white/[0.06] bg-white/5' }}">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-semibold {{ 'text-amber-400' if item.severity == 'BLOCKING' else 'text-gray-100' }}">{{ item.label }}</span>
+        <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {{ 'border-amber-500/30 text-amber-400' if item.severity == 'BLOCKING' else 'border-white/10 text-gray-400' }}">{{ item.severity }}</span>
+      </div>
+      <p class="mt-1 text-xs text-gray-400">{{ item.detail }}</p>
+      {% if item.fix %}
+      <p class="mt-1.5 text-[11px] text-faint">
+        {% if item.fix.startswith('reach.') %}<a href="{{ url_for(item.fix) }}" class="text-amber-500/80 hover:text-amber-400">Connections &rarr;</a>
+        {% else %}<code>{{ item.fix }}</code>{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Encryption key') }}
+  <p class="mt-2 text-xs text-gray-400">
+    Contact details at rest are encrypted. Current key source:
+    <code class="rounded bg-white/5 px-1.5 py-0.5 text-[11px] text-gray-300">{{ key_state }}</code>
+  </p>
+  {% if key_state == 'DEV_EPHEMERAL' %}
+  <p class="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+    The key is ephemeral: every restart makes previously stored contact details unreadable.
+    Set <code>REACH_ENCRYPTION_KEY</code> to keep them.
+  </p>
+  {% endif %}
+</section>
+
+<section class="text-center text-[11px] text-faint">REACH {{ reach_version }}</section>
+
+{% endblock %}

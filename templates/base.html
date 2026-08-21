@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}REACH{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23f59e0b' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='2'/%3E%3Cpath d='M5.8 5.8a6 6 0 000 8.4M14.2 5.8a6 6 0 010 8.4M3 3a10 10 0 000 14M17 3a10 10 0 010 14'/%3E%3C/svg%3E">
+  {# Tailwind is built ahead of time into static/tailwind.css and served from here.
+     cdn.tailwindcss.com is a development tool by its own documentation, and loading
+     it would make every page render depend on a third party being up. Regenerate
+     with tools/build-css.sh after changing a template. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}?v={{ reach_version }}">
+</head>
+<body class="min-h-screen bg-[#090909] text-gray-100 antialiased">
+  {% block content %}{% endblock %}
+</body>
+</html>

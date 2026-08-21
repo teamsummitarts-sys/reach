@@ -1,0 +1,69 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Results — {{ campaign.name }}{% endblock %}
+
+{% block reach_content %}
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Record a response', 'REACH never generates or sends an automated reply. Outcomes are recorded by a person.') }}
+  <div class="mt-4 space-y-2">
+    {% for target in awaiting %}
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.08] bg-white/5 px-3 py-2">
+      <span class="min-w-0 flex-1 truncate text-sm font-semibold">{{ target.outlet_name }}</span>
+      {{ ui.status_badge(target.status) }}
+      <select class="response-kind rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-[11px]" data-target="{{ target.id }}">
+        {% for kind in kinds %}<option value="{{ kind }}">{{ kind.replace('_',' ') }}</option>{% endfor %}
+      </select>
+      <button type="button" class="record-response shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/20"
+              data-target="{{ target.id }}">Record</button>
+    </div>
+    {% else %}
+    {{ ui.empty('Nothing is awaiting a response.') }}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="overflow-hidden rounded-xl border border-white/[0.08] bg-[#111113]">
+  <div class="border-b border-white/[0.08] px-5 py-3">{{ ui.section('Recorded responses') }}</div>
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[640px] text-left text-sm">
+      <thead>
+        <tr class="border-b border-white/[0.08] text-[10px] uppercase tracking-[0.15em] text-gray-400">
+          <th class="px-4 py-2.5 font-medium">Outlet</th>
+          <th class="px-4 py-2.5 font-medium">Kind</th>
+          <th class="px-4 py-2.5 font-medium">Sentiment</th>
+          <th class="px-4 py-2.5 font-medium">Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for response in responses %}
+        <tr class="border-b border-white/[0.08] last:border-0">
+          <td class="px-4 py-2.5 font-semibold">{{ response.outlet_name }}</td>
+          <td class="px-4 py-2.5">{{ ui.status_badge(response.kind) }}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-400">{{ response.sentiment }}</td>
+          <td class="px-4 py-2.5 text-xs tabular-nums text-gray-400">{{ response.received_at[:10] }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="px-4 py-10 text-center text-xs text-faint">No responses recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="rounded-xl border border-white/[0.08] bg-[#111113] px-4 py-3 text-[11px] text-gray-400">
+  An acceptance is not a placement. Record the placement on the Placements screen once you have evidence.
+</div>
+
+<script>
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('.record-response');
+    if (!button) return;
+    const targetId = button.dataset.target;
+    const select = document.querySelector(`.response-kind[data-target="${targetId}"]`);
+    const data = await reachPost(`/reach/targets/${targetId}/response`, { kind: select.value });
+    if (data.ok) { reachToast('Response recorded', true); setTimeout(() => window.location.reload(), 600); }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,234 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Dashboard{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Hey {{ principal_name }}</h1>
+  <p class="mt-1 text-sm text-gray-400">
+    {% if campaign_count %}
+    {{ campaign_count }} campaign{{ '' if campaign_count == 1 else 's' }}
+    {%- if qualified %} · {{ qualified|length }} qualified opportunit{{ 'y' if qualified|length == 1 else 'ies' }}{% endif %}
+    {%- if drafted %} · {{ drafted|length }} awaiting your approval{% endif %}.
+    {% else %}
+    Add a track and REACH will go find the places that might actually play it.
+    {% endif %}
+  </p>
+</section>
+
+{% if onboarding and onboarding.show %}
+{# Driven entirely by reach/onboarding.py, which answers each item from the
+   database or the environment, so there is no state here to fall out of sync. #}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  <div class="flex flex-wrap items-baseline justify-between gap-3">
+    <div class="min-w-0">
+      {{ ui.section('Getting started', 'Each item below is answered from your data, not a checklist someone wrote.') }}
+    </div>
+    <span class="shrink-0 text-xs tabular-nums text-gray-400">{{ onboarding.done_count }} of {{ onboarding.total }} done</span>
+  </div>
+  <ol class="mt-4 space-y-1.5">
+    {% for step in onboarding.steps %}
+    <li class="flex items-start gap-3 rounded-lg px-3 py-2 {{ 'bg-white/5' if step.state == 'TODO' else '' }}">
+      <span class="mt-0.5 shrink-0" aria-hidden="true">
+        {% if step.state == 'DONE' %}
+        <svg class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg>
+        {% else %}
+        <svg class="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/></svg>
+        {% endif %}
+      </span>
+      <span class="min-w-0">
+        <span class="block text-sm font-semibold {{ 'text-faint line-through decoration-faint/40' if step.state == 'DONE' else 'text-gray-100' }}">{{ step.label }}</span>
+        <span class="mt-0.5 block text-xs text-gray-400">{{ step.detail }}</span>
+      </span>
+      {% if step.state == 'TODO' %}
+      <a href="{{ url_for(step.href) }}"
+         class="ml-auto shrink-0 self-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 transition-colors hover:border-white/20 hover:text-white">Go</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+{% if campaign_count %}
+{# ---- What deserves attention right now: four real counts, each a door. ---- #}
+<section aria-label="Needs attention" class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+  <a href="{{ url_for('reach.all_opportunities') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-2xl font-bold tabular-nums {{ 'text-amber-400' if qualified else 'text-gray-100' }}">{{ qualified|length }}</div>
+    <div class="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-400">New opportunities</div>
+  </a>
+  <a href="{{ url_for('reach.all_opportunities', view='review') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-2xl font-bold tabular-nums {{ 'text-amber-400' if drafted else 'text-gray-100' }}">{{ drafted|length }}</div>
+    <div class="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-400">Ready to review</div>
+  </a>
+  <a href="{{ url_for('reach.all_responses') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-2xl font-bold tabular-nums text-gray-100">{{ follow_ups|length }}</div>
+    <div class="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-400">Follow-ups due</div>
+  </a>
+  <a href="{{ url_for('reach.all_responses') }}" class="rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+    <div class="text-2xl font-bold tabular-nums {{ 'text-emerald-400' if recent_responses else 'text-gray-100' }}">{{ recent_responses|length }}</div>
+    <div class="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-400">Recent responses</div>
+  </a>
+</section>
+
+{% if actions %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Next best actions', 'A work queue computed from your records — nothing motivational, only what moves something forward.') }}
+  <ol class="mt-3 divide-y divide-white/[0.06]">
+    {% for action in actions %}
+    <li>
+      <a href="{{ action.url }}" class="group flex items-center gap-3 py-2.5">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-[#171719] text-amber-400" aria-hidden="true">
+          {% if action.icon == 'send' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+          {% elif action.icon == 'star' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M12 3l2.4 6.1L21 12l-6.6 2.9L12 21l-2.4-6.1L3 12l6.6-2.9z"/></svg>
+          {% elif action.icon == 'hand' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M18 11V6a2 2 0 00-4 0v5m0-3.5V4a2 2 0 00-4 0v7m0-4.5a2 2 0 00-4 0V14a7 7 0 0014 0v-3a2 2 0 00-4 0"/></svg>
+          {% elif action.icon == 'clock' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" class="h-4 w-4"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          {% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>
+          {% endif %}
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-semibold text-gray-100 group-hover:text-white">{{ action.title }}</span>
+          {% if action.context %}<span class="block truncate text-xs text-gray-400">{{ action.context }}</span>{% endif %}
+        </span>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-faint group-hover:text-gray-300" aria-hidden="true"><path d="M7 4l6 6-6 6"/></svg>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+{% if best %}
+<section>
+  <div class="flex items-baseline justify-between gap-3">
+    {{ ui.section('Best opportunities') }}
+    <a href="{{ url_for('reach.all_opportunities') }}" class="text-xs font-semibold text-amber-400 hover:underline">See all</a>
+  </div>
+  <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+    {% for t in best %}
+    <a href="{{ url_for('reach.target_detail', campaign_id=t.campaign_id, target_id=t.id) }}"
+       class="block rounded-xl border border-white/[0.08] bg-[#111113] p-4 transition-colors hover:border-white/20">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="truncate text-sm font-semibold text-gray-100">{{ t.outlet_name or t.outlet_domain }}</div>
+          <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
+            <span class="uppercase tracking-wide">{{ (t.outlet_kind or 'UNKNOWN').replace('_',' ') }}</span>
+            <span aria-hidden="true">·</span>
+            <span class="truncate">{{ t.campaign_name }}</span>
+          </div>
+        </div>
+        {{ ui.match_pill(t.reach_score) }}
+      </div>
+      {% if t.status_reason %}<p class="mt-2 line-clamp-2 text-xs text-gray-400">{{ t.status_reason }}</p>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if featured %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      {{ ui.section('Campaign') }}
+      <a href="{{ url_for('reach.overview', campaign_id=featured.campaign.id) }}" class="mt-1 block text-lg font-semibold text-gray-100 hover:text-white">{{ featured.campaign.name }}</a>
+      <div class="text-xs text-gray-400">{{ featured.campaign.recording_title }} · {{ featured.campaign.mode }}</div>
+    </div>
+    <a href="{{ featured.next_url }}"
+       class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-[13px] font-semibold text-black hover:bg-amber-400">
+      Continue
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5" aria-hidden="true"><path d="M7 4l6 6-6 6"/></svg>
+    </a>
+  </div>
+  <div class="mt-4">{{ ui.stage_track(featured.stages, featured.stage) }}</div>
+  <div class="mt-4 grid grid-cols-3 gap-4 border-t border-white/[0.06] pt-4 sm:grid-cols-6">
+    {{ ui.metric(featured.metrics.discovered, 'Discovered') }}
+    {{ ui.metric(featured.metrics.qualified, 'Qualified', 'text-amber-400') }}
+    {{ ui.metric(featured.metrics.ready, 'Ready') }}
+    {{ ui.metric(featured.metrics.submitted, 'Submitted') }}
+    {{ ui.metric(featured.metrics.responses, 'Responses') }}
+    {{ ui.metric(featured.metrics.placed, 'Placed', 'text-emerald-400') }}
+  </div>
+  {% if more_campaigns %}
+  <div class="mt-4 space-y-2 border-t border-white/[0.06] pt-3">
+    {% for item in more_campaigns %}
+    <a href="{{ url_for('reach.overview', campaign_id=item.campaign.id) }}" class="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-white/5">
+      <span class="min-w-0 truncate text-sm font-semibold text-gray-300">{{ item.campaign.name }}</span>
+      <span class="shrink-0 rounded-full border border-white/[0.08] bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{{ item.stage }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if campaign_count > 3 %}
+  <a href="{{ url_for('reach.campaigns_list') }}" class="mt-3 inline-block text-xs font-semibold text-amber-400 hover:underline">All {{ campaign_count }} campaigns</a>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if drafted %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  <div class="flex items-baseline justify-between gap-3">
+    {{ ui.section('Needs your approval', 'Nothing sends without you. Review the exact message before it goes anywhere.') }}
+  </div>
+  <div class="mt-3 space-y-2">
+    {% for t in drafted[:2] %}
+    <div class="flex items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-[#171719] p-3">
+      <div class="min-w-0">
+        <div class="truncate text-sm font-semibold text-gray-100">{{ t.outlet_name or t.outlet_domain }}</div>
+        <div class="text-xs text-gray-400">{{ t.campaign_name }} · drafted, waiting on you</div>
+      </div>
+      {# Review happens on the review screen, where the full message and its
+         sources are visible. No send button lives on the dashboard. #}
+      <a href="{{ url_for('reach.review', campaign_id=t.campaign_id) }}"
+         class="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20">Review</a>
+    </div>
+    {% endfor %}
+    {% if drafted|length > 2 %}
+    <a href="{{ url_for('reach.all_opportunities', view='review') }}" class="inline-block text-xs font-semibold text-amber-400 hover:underline">All {{ drafted|length }} waiting</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if recent_responses %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  <div class="flex items-baseline justify-between gap-3">
+    {{ ui.section('Recent responses') }}
+    <a href="{{ url_for('reach.all_responses') }}" class="text-xs font-semibold text-amber-400 hover:underline">See all</a>
+  </div>
+  <ol class="mt-3 divide-y divide-white/[0.06]">
+    {% for r in recent_responses %}
+    <li class="flex items-center gap-3 py-2.5">
+      {{ ui.status_badge(r.kind) }}
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-sm font-semibold text-gray-100">{{ r.outlet_name }}</span>
+        {% if r.body_excerpt %}<span class="block truncate text-xs text-gray-400">&ldquo;{{ r.body_excerpt }}&rdquo;</span>{% endif %}
+      </span>
+      <span class="shrink-0 text-[11px] tabular-nums text-faint">{{ r.received_at[:10] }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+{% else %}
+{# ---- First run: no campaigns yet. One clear door in. ---- #}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-6 text-center sm:p-10">
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" class="mx-auto h-10 w-10 text-amber-500" aria-hidden="true">
+    <circle cx="10" cy="10" r="2"/><path d="M5.8 5.8a6 6 0 000 8.4M14.2 5.8a6 6 0 010 8.4M3 3a10 10 0 000 14M17 3a10 10 0 010 14"/>
+  </svg>
+  <h2 class="mt-4 text-lg font-semibold text-gray-100">Add music, find opportunities, get responses</h2>
+  <p class="mx-auto mt-2 max-w-md text-sm text-gray-400">
+    REACH searches the live web for blogs, radio, playlists and magazines that fit your track,
+    keeps the evidence for every claim, and never sends anything without your approval.
+  </p>
+  <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+    <a href="{{ url_for('reach.new_campaign') }}" class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400">Start your first campaign</a>
+    <a href="{{ url_for('reach.catalog_view') }}" class="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-white/20 hover:text-white">Add a track first</a>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

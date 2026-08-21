@@ -1,0 +1,183 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Review — {{ campaign.name }}{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-xl font-semibold tracking-tight">Review &amp; approve</h1>
+  <p class="mt-1 text-sm text-gray-400">The exact message, its recipient, and the source of every claim. Nothing sends without your approval — and editing anything cancels it.</p>
+</section>
+
+{% if not health.ready %}
+<div class="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3">
+  <div class="text-xs font-semibold uppercase tracking-[0.18em] text-amber-400">{{ health.status }}</div>
+  <div class="mt-1 text-xs text-amber-200/80">Failing: {{ health.failing | join(', ') }}. Drafts can still be prepared and reviewed.</div>
+</div>
+{% endif %}
+
+{% if throttle.blockers %}
+<div class="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-300">
+  Throttle: {{ throttle.blockers | join(' · ') }}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+  <section class="space-y-3 lg:col-span-1">
+    <div class="flex items-center justify-between">
+      {{ ui.section('Queue') }}
+      <button type="button" data-post="{{ url_for('reach.draft_all', campaign_id=campaign.id) }}"
+              data-success="Drafts generated"
+              class="rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5">
+        Draft all ready
+      </button>
+    </div>
+    <div class="max-h-[640px] space-y-2 overflow-y-auto pr-1">
+      {% for item in queue %}
+      <a href="{{ url_for('reach.review', campaign_id=campaign.id, target_id=item.target_id) }}"
+         class="block rounded-lg border px-3 py-2 transition-colors {{ 'border-amber-500/40 bg-amber-500/10' if item.target_id == selected_id else 'border-white/[0.08] bg-white/5 hover:bg-white/10' }}">
+        <div class="flex items-start justify-between gap-2">
+          <span class="min-w-0 truncate text-xs font-semibold">{{ item.outlet_name }}</span>
+          {{ ui.score_pill(item.reach_score) }}
+        </div>
+        <div class="mt-1 flex flex-wrap items-center gap-1.5">
+          {{ ui.status_badge(item.status) }}
+          {% if item.approvals %}<span class="text-[10px] font-semibold uppercase text-emerald-400">approved</span>{% endif %}
+          {% if item.translation_flagged %}<span class="text-[10px] font-semibold uppercase text-amber-400">translate</span>{% endif %}
+        </div>
+      </a>
+      {% else %}
+      {{ ui.empty('Nothing waiting for approval.') }}
+      {% endfor %}
+    </div>
+
+    {% if draftable_targets %}
+    <div class="rounded-lg border border-white/[0.08] bg-[#111113] p-3">
+      <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Qualified — drafts start here</div>
+      <p class="mt-1 text-[11px] text-gray-400">Drafting works even while sending is disabled.</p>
+      <div class="mt-2 space-y-1">
+        {% for target in draftable_targets %}
+        <div class="flex items-center justify-between gap-2 text-[11px]">
+          <span class="min-w-0 truncate text-gray-300">{{ target.outlet_name }}</span>
+          <button type="button" data-post="{{ url_for('reach.generate_draft', target_id=target.id) }}"
+                  data-success="Pitch drafted"
+                  data-next="{{ url_for('reach.review', campaign_id=campaign.id, target_id=target.id) }}"
+                  class="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-400 hover:bg-amber-500/20">Draft</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if ready_targets %}
+    <div class="rounded-lg border border-white/[0.08] bg-[#111113] p-3">
+      <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Ready, not yet drafted</div>
+      <div class="mt-2 space-y-1">
+        {% for target in ready_targets %}
+        <div class="flex items-center justify-between gap-2 text-[11px]">
+          <span class="min-w-0 truncate text-gray-400">{{ target.outlet_name }}</span>
+          <button type="button" data-post="{{ url_for('reach.generate_draft', target_id=target.id) }}"
+                  data-success="Draft generated"
+                  class="shrink-0 rounded border border-white/10 px-2 py-0.5 font-semibold text-gray-400 hover:bg-white/5">Draft</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="lg:col-span-2">
+    {% if view %}
+    <div class="space-y-4 rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Exactly what will be sent', 'Changing any material field invalidates the approval.') }}
+
+      <dl class="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Recipient</dt><dd class="font-mono text-gray-100">{{ view.recipient_preview }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Category</dt><dd class="text-gray-100">{% if view.recipient_category %}{{ view.recipient_category.replace('_',' ') }}{% else %}{{ ui.unknown() }}{% endif %}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Sending identity</dt><dd class="truncate text-gray-100">{{ view.sending_identity.from_email or 'NOT CONFIGURED' }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Outreach</dt><dd>{{ ui.decision_label(view.compliance_decision) }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Risk</dt><dd class="text-gray-100">{% if view.risk %}{{ view.risk.band }}{% else %}{{ ui.unknown() }}{% endif %}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Cost</dt><dd class="text-gray-100">{{ view.cost }} {{ view.cost_model or '' }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400">Attachments</dt><dd class="text-gray-100">{{ view.attachments | length }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-white/[0.08] pb-1.5"><dt class="text-gray-400" title="A fingerprint of exactly this message. Approval binds to it; if anything changes, the fingerprint changes and the approval no longer counts.">Approval verified against</dt><dd class="font-mono text-[10px] text-gray-400">{{ view.payload_hash[:16] }}…</dd></div>
+      </dl>
+
+      <div>
+        <label class="text-[10px] uppercase tracking-[0.18em] text-gray-400" for="subject">Subject</label>
+        <input id="subject" value="{{ view.subject }}"
+               class="mt-1 w-full rounded-md border border-white/10 bg-[#090909] px-2.5 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="text-[10px] uppercase tracking-[0.18em] text-gray-400" for="body">Message</label>
+        <textarea id="body" rows="16"
+                  class="mt-1 w-full rounded-md border border-white/10 bg-[#090909] px-3 py-2 font-sans text-xs leading-relaxed text-gray-300">{{ view.body }}</textarea>
+      </div>
+
+      <div>
+        <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Source of every factual claim</div>
+        <div class="mt-2 space-y-1">
+          {% for fact in view.facts %}
+          <div class="flex items-start gap-2 text-[11px]">
+            <span class="w-40 shrink-0 truncate text-gray-400">{{ fact.claim }}</span>
+            <span class="min-w-0 text-gray-400">{{ fact.basis }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div>
+        <div class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Independent verification of this address</div>
+        <div class="mt-2 space-y-1">
+          {% for item in view.independent_verification %}
+          <a href="{{ item.url }}" rel="noopener noreferrer nofollow" target="_blank"
+             class="block truncate text-[11px] text-amber-500/80 hover:text-amber-400">{{ item.url }} <span class="text-faint">· {{ item.retrieved_at[:10] }}</span></a>
+          {% else %}
+          <div class="text-[11px] text-faint">No independent verification recorded.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 border-t border-white/[0.08] pt-4">
+        <button type="button" id="save-draft"
+                class="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-white/5">Save edits</button>
+        <button type="button" data-post="{{ url_for('reach.approve', target_id=view.target.id) }}"
+                data-success="Approved"
+                class="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20">Approve</button>
+        {# The gate is enforced server-side regardless; disabling the control here
+           just stops it from looking available when it provably is not. #}
+        {% if health.ready %}
+        <button type="button" data-post="{{ url_for('reach.send', target_id=view.target.id) }}"
+                data-success="Sent"
+                class="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/25">Send approved message</button>
+        {% else %}
+        <button type="button" disabled
+                title="The sending identity is not ready, so REACH will not send. Drafts and approvals still work."
+                class="cursor-not-allowed rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-faint">Send approved message</button>
+        <span class="self-center text-[11px] text-amber-500/80">Sending is disabled until the sender health checks pass.</span>
+        {% endif %}
+        <span class="self-center text-[11px] text-faint">{{ view.follow_up_rule }}</span>
+      </div>
+    </div>
+    {% else %}
+    {{ ui.empty('Select a target from the queue, or generate drafts for ready targets.') }}
+    {% endif %}
+  </section>
+</div>
+
+{% if view %}
+<script>
+  document.getElementById('save-draft').addEventListener('click', async () => {
+    const data = await reachPost('{{ url_for("reach.edit_draft", draft_id=view.draft.id) }}', {
+      subject: document.getElementById('subject').value,
+      body: document.getElementById('body').value,
+    });
+    if (data.ok) {
+      reachToast('Saved — any prior approval is now invalid', true);
+      setTimeout(() => window.location.reload(), 900);
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}REACH — Research &amp; outreach for independent musicians{% endblock %}
+
+{#  Local copies of two app components (reach/_layout.html defines the
+    originals; importing that file here would drag in the app shell's blocks).
+    Keep these visually in sync with the app. #}
+{% macro unknown() %}
+<span class="inline-flex items-center rounded border border-dashed border-zinc-600 bg-[#161618] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zinc-400"
+      title="Not measured. REACH shows the gap rather than inventing a number.">UNKNOWN</span>
+{% endmacro %}
+
+{% macro match_pill(score) %}
+{% if score is none %}
+{{ unknown() }}
+{% elif score >= 70 %}
+<span class="inline-flex items-baseline gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1">
+  <span class="tabular-nums text-base font-bold text-emerald-400">{{ score }}</span>
+  <span class="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">Strong match</span>
+</span>
+{% elif score >= 45 %}
+<span class="inline-flex items-baseline gap-1.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1">
+  <span class="tabular-nums text-base font-bold text-amber-400">{{ score }}</span>
+  <span class="text-[10px] font-semibold uppercase tracking-wide text-amber-400">Possible match</span>
+</span>
+{% else %}
+<span class="inline-flex items-baseline gap-1.5 rounded-lg border border-white/[0.08] bg-white/5 px-2.5 py-1">
+  <span class="tabular-nums text-base font-bold text-gray-400">{{ score }}</span>
+  <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Weak match</span>
+</span>
+{% endif %}
+{% endmacro %}
+
+{#
+  The public front door. Everything on this page is either a true statement
+  about how REACH works or a labeled illustration of a UI component — no
+  invented user results, no fake counts, no testimonials that don't exist.
+  The honesty mechanics ARE the pitch.
+#}
+
+{% block content %}
+
+<header class="sticky top-0 z-40 border-b border-white/[0.08] bg-[#090909]/95 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
+    <span class="flex items-center gap-2">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" class="h-5 w-5 text-amber-500" aria-hidden="true">
+        <circle cx="10" cy="10" r="2"/><path d="M5.8 5.8a6 6 0 000 8.4M14.2 5.8a6 6 0 010 8.4M3 3a10 10 0 000 14M17 3a10 10 0 010 14"/>
+      </svg>
+      <span class="text-sm font-bold tracking-tight">REACH</span>
+    </span>
+    <nav class="flex items-center gap-2">
+      <a href="#how" class="hidden rounded-lg px-3 py-1.5 text-[13px] font-semibold text-gray-400 hover:text-gray-200 sm:block">How it works</a>
+      <a href="#refuses" class="hidden rounded-lg px-3 py-1.5 text-[13px] font-semibold text-gray-400 hover:text-gray-200 sm:block">What it refuses</a>
+      <a href="/reach" class="rounded-lg bg-amber-500 px-3 py-1.5 text-[13px] font-semibold text-black hover:bg-amber-400">Open REACH</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  {# ---- Hero ---- #}
+  <section class="relative overflow-hidden border-b border-white/[0.08]"
+           style="background-image: radial-gradient(90% 70% at 50% 0%, rgba(234,179,8,0.08), transparent 60%);">
+    <div class="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6 sm:py-24">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.25em] text-amber-500/90">Research &amp; outreach for independent musicians</p>
+      <h1 class="mx-auto mt-4 max-w-2xl text-4xl font-bold tracking-tight text-gray-100">
+        Find the places that will actually play your music.
+      </h1>
+      <p class="mx-auto mt-5 max-w-xl text-base leading-relaxed text-gray-400">
+        REACH searches the live web for the blogs, radio shows, playlist curators and magazines
+        that fit your track — keeps the receipt for every claim it makes — and never sends
+        a word without your approval.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a href="/reach" class="rounded-lg bg-amber-500 px-5 py-2.5 text-sm font-semibold text-black hover:bg-amber-400">Open REACH</a>
+        <a href="#how" class="rounded-lg border border-white/10 px-5 py-2.5 text-sm font-semibold text-gray-300 hover:border-white/20 hover:text-white">How it works</a>
+      </div>
+      <p class="mt-6 text-xs text-faint">One sentence: a research-and-outreach engine that refuses to make things up.</p>
+    </div>
+  </section>
+
+  {# ---- The honesty mechanics, shown with the app's real components ---- #}
+  <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6" aria-labelledby="honesty-heading">
+    <h2 id="honesty-heading" class="text-xs font-medium uppercase tracking-[0.2em] text-gray-400">Built on receipts, not vibes</h2>
+    <p class="mt-2 max-w-2xl text-sm text-gray-400">These are the actual interface components, doing on this page exactly what they do in the app.</p>
+
+    <div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+        <h3 class="text-sm font-semibold text-gray-100">Every claim carries its source</h3>
+        <p class="mt-1.5 text-xs leading-relaxed text-gray-400">
+          Each opportunity has a "Why do we know this?" panel — the source page, the outlet's
+          own words, the date it was read, and how sure REACH is. Drafted pitches list the
+          source of every factual sentence.
+        </p>
+        <div class="mt-4 rounded-xl border border-white/[0.08] bg-[#171719] p-3 text-xs" aria-label="The Receipt component">
+          <div class="flex items-start justify-between gap-3">
+            <p class="text-gray-100">The claim REACH is making</p>
+            <span class="shrink-0 rounded-full border border-white/[0.08] bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">how sure</span>
+          </div>
+          <blockquote class="mt-2 border-l-2 border-amber-500/40 pl-2.5 italic text-gray-400">&ldquo;the outlet's own words, quoted&rdquo;</blockquote>
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+            <span class="text-sky-400">the page it came from</span>
+            <span class="text-faint">the date it was read</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+        <h3 class="text-sm font-semibold text-gray-100">UNKNOWN stays UNKNOWN</h3>
+        <p class="mt-1.5 text-xs leading-relaxed text-gray-400">
+          A stream count nobody entered is not zero. A score component that can't be computed
+          is not skipped. Gaps render as deliberate telemetry:
+        </p>
+        <div class="mt-4 space-y-2">
+          <div class="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2 text-xs">
+            <span class="text-gray-400">Monthly streams</span>
+            {{ unknown() }}
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2 text-xs">
+            <span class="text-gray-400">Audience fit</span>
+            {{ unknown() }}
+          </div>
+        </div>
+        <p class="mt-3 text-[11px] text-faint">Not an error. Not a warning. Just the truth about what nobody measured.</p>
+      </div>
+
+      <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+        <h3 class="text-sm font-semibold text-gray-100">Scores name their verdict</h3>
+        <p class="mt-1.5 text-xs leading-relaxed text-gray-400">
+          Opportunities score 0–100 from named components — genre match, credibility, contact
+          verification, freshness — each one inspectable, none of them a percentage of nothing.
+        </p>
+        <div class="mt-4 flex flex-wrap items-center gap-2" aria-label="Score verdicts as they render in the app">
+          {{ match_pill(81) }}
+          {{ match_pill(58) }}
+          {{ match_pill(none) }}
+        </div>
+        <p class="mt-3 text-[11px] text-faint">The format, as it renders in the app. Your numbers come from your evidence.</p>
+      </div>
+    </div>
+  </section>
+
+  {# ---- How it works ---- #}
+  <section id="how" class="border-t border-white/[0.08] bg-[#0d0d0f]">
+    <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+      <h2 class="text-xs font-medium uppercase tracking-[0.2em] text-gray-400">How it works</h2>
+      <ol class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {% for title, detail in [
+          ('Add your music', 'A title and an artist are enough. Everything you don\'t know stays UNKNOWN.'),
+          ('Discover', 'REACH runs dozens of live web searches built from your track\'s profile, through a hardened crawler that respects robots.txt and drops bot walls.'),
+          ('Review the evidence', 'Qualified outlets arrive scored, deduplicated, and sourced. Scam sites arrive BLOCKED, with reasons.'),
+          ('Approve outreach', 'Every pitch is built only from sourced facts. You read the exact message; editing it cancels any approval.'),
+          ('Get responses', 'Replies, placements and follow-ups tracked per outlet — placements only count with an evidence URL.'),
+        ] %}
+        <li class="rounded-xl border border-white/[0.08] bg-[#111113] p-4">
+          <span class="grid h-6 w-6 place-items-center rounded-full border border-amber-500/50 text-[11px] font-bold tabular-nums text-amber-400" aria-hidden="true">{{ loop.index }}</span>
+          <h3 class="mt-2.5 text-sm font-semibold text-gray-100">{{ title }}</h3>
+          <p class="mt-1 text-xs leading-relaxed text-gray-400">{{ detail }}</p>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </section>
+
+  {# ---- The refusals are the feature ---- #}
+  <section id="refuses" class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+    <h2 class="text-xs font-medium uppercase tracking-[0.2em] text-gray-400">What REACH refuses to do</h2>
+    <p class="mt-2 max-w-2xl text-sm text-gray-400">Most outreach tools compete on what they automate. REACH competes on what it won't.</p>
+    <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {% for title, detail in [
+        ('No pay-for-play', 'Guaranteed-streams and guaranteed-placement sites are BLOCKED outright, with the evidence attached.'),
+        ('No sending without you', 'Every email needs your explicit approval, bound to a fingerprint of the exact message. Sending stays locked until your domain passes real DNS checks.'),
+        ('No invented numbers', 'Stream counts come from your own reported figures. Fit claims come from the outlet\'s own pages. Nothing is padded to look better.'),
+        ('No CAPTCHA solving, no login walls', 'Outlets that need forms, logins or platform tools route to you as prepared tasks — with your answers copy-ready.'),
+        ('No automated DMs, no scraping private pages', 'Only public pages, crawled politely: robots.txt honored, rate limits kept, private interfaces untouched.'),
+        ('No silent failures', 'A provider without credentials says NOT CONNECTED. A refusal states its reason. Demo data is labeled on every screen.'),
+      ] %}
+      <div class="flex gap-3 rounded-xl border border-white/[0.08] bg-[#111113] p-4">
+        <span class="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-red-500/40 text-[10px] font-bold text-red-400" aria-hidden="true">✕</span>
+        <div>
+          <h3 class="text-sm font-semibold text-gray-100">{{ title }}</h3>
+          <p class="mt-1 text-xs leading-relaxed text-gray-400">{{ detail }}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ---- Honest status ---- #}
+  <section class="border-t border-white/[0.08] bg-[#0d0d0f]">
+    <div class="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <div class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
+        <h2 class="text-sm font-semibold text-amber-400">Where REACH honestly is</h2>
+        <p class="mt-1.5 text-xs leading-relaxed text-amber-200/80">
+          Early software, in active development. Each REACH instance serves one artist or team.
+          Discovery, evidence, scoring and drafting work today; email sending unlocks only after
+          your sending domain passes SPF, DKIM and DMARC checks — and that gate is the product
+          working, not a limitation of it.
+        </p>
+      </div>
+      <div class="mt-8 flex flex-col items-center gap-4 text-center">
+        <a href="/reach" class="rounded-lg bg-amber-500 px-5 py-2.5 text-sm font-semibold text-black hover:bg-amber-400">Open REACH</a>
+        <p class="text-[11px] text-faint">REACH {{ reach_version }}</p>
+      </div>
+    </div>
+  </section>
+</main>
+{% endblock %}

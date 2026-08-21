@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+
+{#
+  REACH shell. Design tokens: #090909 page, #111113 panels, #171719 raised,
+  white/[0.08] hairlines, amber-500 accent, rounded-xl cards, uppercase
+  tracking-[0.2em] section labels. Color communicates state, never decoration.
+#}
+
+{% macro section(title, subtitle=None) %}
+<h2 class="text-xs font-medium uppercase tracking-[0.2em] text-gray-400">{{ title }}</h2>
+{% if subtitle %}<p class="mt-1 text-sm text-gray-400">{{ subtitle }}</p>{% endif %}
+{% endmacro %}
+
+{#  The UNKNOWN badge: a value nobody measured, rendered as deliberate
+    telemetry — monospace, dashed border, its own ground — so a gap can never
+    be mistaken for a zero, a blank, or a broken cell. #}
+{% macro unknown() %}
+<span class="inline-flex items-center rounded border border-dashed border-zinc-600 bg-[#161618] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zinc-400"
+      title="Not measured. REACH shows the gap rather than inventing a number.">UNKNOWN</span>
+{% endmacro %}
+
+{% macro mode_badge(mode) %}
+{% set ui = {
+  'COPILOT':   'border-amber-500/30 bg-amber-500/10 text-amber-400',
+  'SCOUT':     'border-sky-500/25 bg-sky-500/10 text-sky-400',
+  'AUTOPILOT': 'border-violet-500/25 bg-violet-500/10 text-violet-300',
+} %}
+<span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {{ ui.get(mode, 'border-gray-500/25 bg-gray-500/10 text-gray-400') }}">{{ mode }}</span>
+{% endmacro %}
+
+{% macro state_badge(state) %}
+{% set ui = {
+  'CONNECTED':         'border-emerald-500/25 bg-emerald-500/10 text-emerald-400',
+  'NOT_CONNECTED':     'border-gray-500/25 bg-gray-500/10 text-gray-400',
+  'LIMITED':           'border-amber-500/25 bg-amber-500/10 text-amber-400',
+  'MANUAL_ONLY':       'border-sky-500/25 bg-sky-500/10 text-sky-400',
+  'APPROVAL_REQUIRED': 'border-violet-500/25 bg-violet-500/10 text-violet-300',
+  'QUOTA_LIMITED':     'border-orange-500/25 bg-orange-500/10 text-orange-400',
+  'DISABLED':          'border-gray-600/25 bg-gray-600/10 text-gray-400',
+  'BLOCKED':           'border-red-500/25 bg-red-500/10 text-red-400',
+  'BETA':              'border-sky-500/25 bg-sky-500/10 text-sky-400',
+  'ACTIVE':            'border-emerald-500/25 bg-emerald-500/10 text-emerald-400',
+} %}
+<span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {{ ui.get(state, ui['NOT_CONNECTED']) }}">
+  {{ state.replace('_', ' ') }}
+</span>
+{% endmacro %}
+
+{% macro status_badge(status) %}
+{% set good = ['QUALIFIED','READY','APPROVED','SENT','SUBMITTED','DELIVERED','ACCEPTED','PLACED','RESPONDED'] %}
+{% set warn = ['DISCOVERED','ENRICHING','UNVERIFIED','DRAFTED','NEEDS_APPROVAL','QUEUED','FOLLOW_UP_DUE','STALE'] %}
+{% set bad  = ['DISQUALIFIED','DUPLICATE','BOUNCED','DECLINED','EXPIRED','OPTED_OUT','BLOCKED'] %}
+{% if status in good %}{% set cls = 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400' %}
+{% elif status in warn %}{% set cls = 'border-amber-500/25 bg-amber-500/10 text-amber-400' %}
+{% elif status in bad %}{% set cls = 'border-red-500/25 bg-red-500/10 text-red-400' %}
+{% else %}{% set cls = 'border-gray-500/25 bg-gray-500/10 text-gray-400' %}{% endif %}
+<span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {{ cls }}">{{ (status or 'UNKNOWN').replace('_',' ') }}</span>
+{% endmacro %}
+
+{% macro risk_badge(band) %}
+{% set ui = {
+  'LOW RISK':  'border-emerald-500/25 bg-emerald-500/10 text-emerald-400',
+  'REVIEW':    'border-amber-500/25 bg-amber-500/10 text-amber-400',
+  'HIGH RISK': 'border-orange-500/25 bg-orange-500/10 text-orange-400',
+  'BLOCK':     'border-red-500/25 bg-red-500/10 text-red-400',
+} %}
+<span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {{ ui.get(band, 'border-gray-500/25 bg-gray-500/10 text-gray-400') }}">{{ band or 'UNKNOWN' }}</span>
+{% endmacro %}
+
+{% macro score_pill(score) %}
+{% if score is none %}
+{{ unknown() }}
+{% else %}
+<span class="tabular-nums text-sm font-bold {{ 'text-emerald-400' if score >= 70 else ('text-amber-400' if score >= 45 else 'text-gray-400') }}">{{ score }}</span>
+{% endif %}
+{% endmacro %}
+
+{#  The REACH score as an artist reads it: a number with a verdict, never a
+    percentage. UNKNOWN stays UNKNOWN — deliberate, not an error state. #}
+{% macro match_pill(score) %}
+{% if score is none %}
+{{ unknown() }}
+{% elif score >= 70 %}
+<span class="inline-flex items-baseline gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1">
+  <span class="tabular-nums text-base font-bold text-emerald-400">{{ score }}</span>
+  <span class="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">Strong match</span>
+</span>
+{% elif score >= 45 %}
+<span class="inline-flex items-baseline gap-1.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1">
+  <span class="tabular-nums text-base font-bold text-amber-400">{{ score }}</span>
+  <span class="text-[10px] font-semibold uppercase tracking-wide text-amber-400">Possible match</span>
+</span>
+{% else %}
+<span class="inline-flex items-baseline gap-1.5 rounded-lg border border-white/[0.08] bg-white/5 px-2.5 py-1">
+  <span class="tabular-nums text-base font-bold text-gray-400">{{ score }}</span>
+  <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Weak match</span>
+</span>
+{% endif %}
+{% endmacro %}
+
+{#  The match verdict with its working shown: click to unfold the component
+    breakdown. A component nobody could compute renders UNKNOWN — it is never
+    folded into the number as a zero. #}
+{% macro score_breakdown(score, components, labels) %}
+{% if components %}
+<details class="group/score">
+  <summary class="flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden">
+    {{ match_pill(score) }}
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         class="h-3 w-3 shrink-0 text-faint transition-transform group-open/score:rotate-90" aria-hidden="true"><path d="M7 4l6 6-6 6"/></svg>
+    <span class="sr-only">Show score components</span>
+  </summary>
+  <div class="mt-2 w-60 max-w-full space-y-1 rounded-lg border border-white/[0.08] bg-[#171719] p-2.5">
+    {% for key, value in components.items() %}
+    <div class="flex items-center gap-2 text-[10px]">
+      <span class="w-28 shrink-0 truncate text-gray-400">{{ labels.get(key, key.replace('_',' ')) }}</span>
+      <span class="h-1 flex-1 overflow-hidden rounded-full bg-white/5">
+        {% if value is not none %}<span class="block h-full rounded-full bg-amber-500/60" style="width: {{ (value * 100) | round | int }}%"></span>{% endif %}
+      </span>
+      <span class="flex w-14 shrink-0 justify-end tabular-nums text-gray-400">{% if value is none %}{{ unknown() }}{% else %}{{ (value * 100) | round | int }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% else %}
+{{ match_pill(score) }}
+{% endif %}
+{% endmacro %}
+
+{#  The one thing to do with this opportunity right now — a direct action,
+    not a status echo. Refusals stay visible and explained. #}
+{% macro target_actions(t, campaign_id) %}
+{% if t.status == 'BLOCKED' %}
+<span class="text-xs font-semibold text-red-400" title="{{ t.status_reason or 'Blocked by policy' }}">Blocked</span>
+{% elif t.status == 'DRAFTED' %}
+<a href="{{ url_for('reach.review', campaign_id=campaign_id, target_id=t.id) }}"
+   class="inline-flex shrink-0 items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/20">Review pitch</a>
+{% elif t.status in ('QUALIFIED', 'READY') and t.compliance_decision != 'BLOCK' %}
+<button type="button" data-post="{{ url_for('reach.generate_draft', target_id=t.id) }}"
+        data-success="Pitch drafted — opening the review"
+        data-next="{{ url_for('reach.review', campaign_id=campaign_id, target_id=t.id) }}"
+        class="inline-flex shrink-0 items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/20">Draft pitch</button>
+{% else %}
+<a href="{{ url_for('reach.target_detail', campaign_id=campaign_id, target_id=t.id) }}"
+   class="inline-flex shrink-0 items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5">Evidence</a>
+{% endif %}
+{% endmacro %}
+
+{#  Compliance in plain language: Allowed / Review required / Blocked. The
+    precise decision (DRAFT_ONLY, LEGAL_REVIEW…) stays visible in the detail
+    views; this is the summary an artist acts on. UNKNOWN stays UNKNOWN. #}
+{% macro decision_label(decision) %}
+{% if decision == 'ALLOW' %}<span class="text-xs font-semibold text-emerald-400">Allowed</span>
+{% elif decision in ('APPROVAL_REQUIRED', 'DRAFT_ONLY', 'LEGAL_REVIEW') %}<span class="text-xs font-semibold text-amber-400">Review required</span>
+{% elif decision == 'BLOCK' %}<span class="text-xs font-semibold text-red-400">Blocked</span>
+{% else %}<span class="text-xs text-faint">UNKNOWN</span>{% endif %}
+{% endmacro %}
+
+{% macro metric(value, label, accent='text-gray-100') %}
+<div>
+  {% if value == 'UNKNOWN' or value is none %}
+  <div class="flex h-8 items-center">{{ unknown() }}</div>
+  {% else %}
+  <div class="text-2xl font-bold tabular-nums {{ accent }}">{{ value }}</div>
+  {% endif %}
+  <div class="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-400">{{ label }}</div>
+</div>
+{% endmacro %}
+
+{% macro empty(message, action_url=None, action_label=None) %}
+<div class="rounded-xl border border-dashed border-white/10 py-8 text-center">
+  <p class="text-xs text-faint">{{ message }}</p>
+  {% if action_url %}
+  <a href="{{ action_url }}" class="mt-3 inline-flex items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20">{{ action_label or 'Get started' }}</a>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{#  The Receipt: how REACH backs a claim. Claim → source → the outlet's own
+    words → when it was read → how sure we are. Reused everywhere evidence
+    appears so "why do we know this" always looks the same. #}
+{% macro receipt(claim, source_url=None, excerpt=None, retrieved=None, confidence=None) %}
+<div class="rounded-xl border border-white/[0.08] bg-[#171719] p-3 text-xs">
+  <div class="flex items-start justify-between gap-3">
+    <p class="text-gray-100">{{ claim }}</p>
+    {% if confidence is not none %}
+    <span class="shrink-0 rounded-full border border-white/[0.08] bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{{ confidence }}</span>
+    {% endif %}
+  </div>
+  {% if excerpt %}
+  <blockquote class="mt-2 border-l-2 border-amber-500/40 pl-2.5 italic text-gray-400">&ldquo;{{ excerpt }}&rdquo;</blockquote>
+  {% endif %}
+  <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-faint">
+    {% if source_url %}
+    <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer" class="max-w-full truncate text-sky-400 hover:underline">{{ source_url }}</a>
+    {% else %}
+    <span class="flex items-center gap-1.5">Source {{ unknown() }}</span>
+    {% endif %}
+    {% if retrieved %}<span>Read {{ retrieved[:10] }}</span>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{#  The compact form of the stage track: six discrete segments, the current
+    one lit. "Stage 3 of 6" is a fact about a discrete sequence — unlike a
+    percentage, it has an honest denominator. #}
+{% macro stage_bar(stages, current) %}
+{% set reached = stages.index(current) if current in stages else 0 %}
+<div>
+  <div class="flex items-center gap-1" role="img" aria-label="Stage {{ reached + 1 }} of {{ stages | length }}: {{ current }}">
+    {% for stage in stages %}
+    <span class="h-1.5 flex-1 rounded-full {{ 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.55)]' if loop.index0 == reached else ('bg-amber-500/50' if loop.index0 < reached else 'bg-white/10') }}"></span>
+    {% endfor %}
+  </div>
+  <div class="mt-1.5 flex items-baseline justify-between text-[10px]">
+    <span class="font-semibold uppercase tracking-[0.18em] text-amber-400">{{ current }}</span>
+    <span class="tabular-nums text-faint">Stage {{ reached + 1 }} of {{ stages | length }}</span>
+  </div>
+</div>
+{% endmacro %}
+
+{#  Where a campaign stands, in words. No percentages — "has qualified
+    opportunities, nothing drafted yet" is a fact; "67% complete" is not. #}
+{% macro stage_track(stages, current) %}
+<ol class="flex flex-wrap items-center gap-y-1.5 text-[11px] font-semibold">
+  {% set reached = stages.index(current) if current in stages else 0 %}
+  {% for stage in stages %}
+  <li class="flex items-center">
+    {% if not loop.first %}<span aria-hidden="true" class="mx-1.5 h-px w-3 sm:w-5 {{ 'bg-amber-500/60' if loop.index0 <= reached else 'bg-white/10' }}"></span>{% endif %}
+    <span class="{{ 'rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-amber-400' if stage == current else ('text-gray-300' if loop.index0 < reached else 'text-faint') }}">
+      {{ stage }}{% if stage == current %}<span class="sr-only"> (current stage)</span>{% endif %}
+    </span>
+  </li>
+  {% endfor %}
+</ol>
+{% endmacro %}
+
+{% block title %}REACH{% endblock %}
+
+{% block content %}
+{% set ep = request.endpoint or '' %}
+{% set primary_nav = [
+  ('reach.index', 'Dashboard', ('reach.index',)),
+  ('reach.all_opportunities', 'Opportunities', ('reach.all_opportunities',)),
+  ('reach.campaigns_list', 'Campaigns', ('reach.campaigns_list', 'reach.new_campaign')),
+  ('reach.all_responses', 'Responses', ('reach.all_responses',)),
+  ('reach.contacts_view', 'Contacts', ('reach.contacts_view',)),
+] %}
+
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-amber-500 focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-black">Skip to content</a>
+
+{% if fixture_mode %}
+<div class="border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-400"
+     title="No search credential is configured, so discovery runs against the built-in fixture corpus. Nothing here is a real outlet.">
+  Demo data — fixture corpus
+</div>
+{% endif %}
+
+<header class="sticky top-0 z-40 border-b border-white/[0.08] bg-[#090909]/95 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
+    <a href="{{ url_for('reach.index') }}" class="flex items-center gap-2" aria-label="REACH dashboard">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" class="h-5 w-5 text-amber-500" aria-hidden="true">
+        <circle cx="10" cy="10" r="2"/><path d="M5.8 5.8a6 6 0 000 8.4M14.2 5.8a6 6 0 010 8.4M3 3a10 10 0 000 14M17 3a10 10 0 010 14"/>
+      </svg>
+      <span class="text-sm font-bold tracking-tight">REACH</span>
+    </a>
+
+    {% if campaign_id %}
+    {# Inside a campaign the global links collapse into a breadcrumb; the
+       stage stepper below owns the anchor position. The links stay one tap
+       away in the profile menu and the mobile bottom bar. #}
+    <nav aria-label="Breadcrumb" class="ml-2 flex min-w-0 items-center gap-1.5 text-[13px]">
+      <a href="{{ url_for('reach.campaigns_list') }}" class="shrink-0 font-semibold text-gray-400 hover:text-gray-200">Campaigns</a>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3 w-3 shrink-0 text-faint" aria-hidden="true"><path d="M7 4l6 6-6 6"/></svg>
+      <span class="truncate font-semibold text-gray-100" aria-current="page">{{ campaign.name if campaign is defined and campaign else 'Campaign' }}</span>
+    </nav>
+    {% else %}
+    <nav aria-label="Primary" class="ml-4 hidden items-center gap-1 md:flex">
+      {% for endpoint, label, matches in primary_nav %}
+      {% set here = ep in matches %}
+      <a href="{{ url_for(endpoint) }}" {% if here %}aria-current="page"{% endif %}
+         class="rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors {{ 'bg-white/5 text-white' if here else 'text-gray-400 hover:text-gray-200' }}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+
+    <div class="ml-auto flex items-center gap-2">
+      {# Sender posture, always in view: whether a message could actually
+         leave is not something to discover at the Send button. #}
+      {% if not sender_ready %}
+      <a href="{{ url_for('reach.outreach_setup') }}"
+         title="Failing: {{ sender_failing | join(', ') if sender_failing else 'sender checks have not passed' }}. Drafting and approval still work."
+         class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-amber-400 hover:bg-amber-500/20">
+        <span class="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true"></span>
+        <span class="hidden sm:inline">Sender: drafts only — {{ sender_detail }}</span>
+        <span class="sm:hidden">Drafts only</span>
+      </a>
+      {% else %}
+      <a href="{{ url_for('reach.outreach_setup') }}"
+         title="SPF, DKIM and DMARC were looked up in DNS and parsed. Approved messages can send."
+         class="hidden shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-400 hover:bg-emerald-500/20 sm:inline-flex">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true"></span>
+        Sender: ready
+      </a>
+      {% endif %}
+      <a href="{{ url_for('reach.new_campaign') }}"
+         class="hidden items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-[13px] font-semibold text-black hover:bg-amber-400 lg:inline-flex">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-3.5 w-3.5" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+        New campaign
+      </a>
+      <details class="reach-menu relative" id="reach-needs-you-menu">
+        <summary class="relative flex cursor-pointer list-none rounded-lg p-2 text-gray-400 hover:bg-white/5 hover:text-gray-200 [&::-webkit-details-marker]:hidden {{ 'text-amber-400' if ep == 'reach.needs_you' }}"
+                 aria-label="Needs You — {{ needs_you_count }} open task{{ '' if needs_you_count == 1 else 's' }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">
+            <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>
+          </svg>
+          {% if needs_you_count %}
+          <span class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold tabular-nums text-black">{{ '99+' if needs_you_count > 99 else needs_you_count }}</span>
+          {% endif %}
+        </summary>
+        <div class="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-white/[0.08] bg-[#111113] p-1.5 shadow-2xl">
+          <div class="border-b border-white/[0.08] px-3 pb-2 pt-1.5">
+            <div class="text-sm font-semibold text-gray-100">Needs You</div>
+            <div class="text-xs text-faint">{{ needs_you_summary.total }} task{{ '' if needs_you_summary.total == 1 else 's' }} only a human may do</div>
+          </div>
+          {% if needs_you_summary.groups %}
+          <nav class="mt-1.5 space-y-0.5" aria-label="Task groups">
+            {% for group in needs_you_summary.groups %}
+            <a href="{{ url_for('reach.needs_you', group=group.label) }}"
+               class="flex items-center justify-between gap-3 rounded-lg px-3 py-1.5 text-[13px] text-gray-300 hover:bg-white/5 hover:text-white">
+              <span>{{ group.label }}</span>
+              <span class="tabular-nums rounded-full bg-white/5 px-2 text-[11px] font-bold text-gray-400">{{ group.count }}</span>
+            </a>
+            {% endfor %}
+          </nav>
+          {% else %}
+          <p class="px-3 py-2.5 text-xs text-faint">Nothing needs you right now.</p>
+          {% endif %}
+          <a href="{{ url_for('reach.needs_you') }}" class="mt-1.5 block rounded-lg border-t border-white/[0.08] px-3 pb-1 pt-2 text-xs font-semibold text-amber-400 hover:text-amber-300">Open the full queue →</a>
+        </div>
+      </details>
+      <details class="reach-menu relative" id="reach-profile-menu">
+        <summary class="flex cursor-pointer list-none items-center rounded-lg p-1.5 text-gray-400 hover:bg-white/5 hover:text-gray-200 [&::-webkit-details-marker]:hidden" aria-label="Account and system menu">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.08] bg-[#171719] text-xs font-bold text-amber-400">{{ principal_name[:1]|upper }}</span>
+        </summary>
+        <div class="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-white/[0.08] bg-[#111113] p-1.5 shadow-2xl">
+          <div class="border-b border-white/[0.08] px-3 pb-2 pt-1.5">
+            <div class="text-sm font-semibold text-gray-100">{{ principal_name }}</div>
+            {% if principal and principal.email %}<div class="truncate text-xs text-faint">{{ principal.email }}</div>{% endif %}
+          </div>
+          <nav class="mt-1.5 space-y-0.5 text-[13px]" aria-label="System">
+            <a href="{{ url_for('reach.catalog_view') }}" class="block rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">My music</a>
+            <a href="{{ url_for('reach.needs_you') }}" class="flex items-center justify-between rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">Needs You{% if needs_you_count %}<span class="tabular-nums rounded-full bg-amber-500/15 px-1.5 text-[11px] font-bold text-amber-400">{{ needs_you_count }}</span>{% endif %}</a>
+            <a href="{{ url_for('reach.outreach_setup') }}" class="block rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">Sender setup</a>
+            <a href="{{ url_for('reach.providers_view') }}" class="block rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">Connections</a>
+            <a href="{{ url_for('reach.advanced') }}" class="block rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">Advanced &amp; system</a>
+            <a href="{{ url_for('reach.settings_view') }}" class="block rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">Settings &amp; safety</a>
+          </nav>
+          <div class="mt-1.5 border-t border-white/[0.08] px-3 pb-1 pt-2 text-[11px] text-faint">REACH {{ reach_version }}</div>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="mx-auto max-w-6xl space-y-6 px-4 pb-24 pt-6 sm:px-6 md:pb-12">
+
+  {% if campaign_id %}
+  {#  The stage stepper carries two independent truths at once: which step the
+      CAMPAIGN has reached (amber chips, derived from persisted records), and
+      which screen YOU are viewing (the filled pill, aria-current). #}
+  {% set stage_tab = {'Setup': 'overview', 'Discover': 'discover',
+                      'Opportunities': 'opportunities', 'Review': 'review',
+                      'Outreach': 'outreach', 'Results': 'responses'} %}
+  {% set nav_keys = nav | map(attribute=0) | list %}
+  {% set reached = nav_keys.index(stage_tab.get(stage_now, 'overview')) if stage_now is defined else 0 %}
+  <nav aria-label="Campaign stages"
+       class="sticky top-14 z-30 -mx-4 -mt-6 flex items-center gap-x-0.5 overflow-x-auto border-b border-white/[0.08] bg-[#090909]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+    {% for key, label in nav %}
+    {% set endpoint = 'reach.' + ('overview' if key == 'overview' else key) %}
+    {% set here = active == key or (key == 'responses' and active == 'placements') %}
+    {% set done = loop.index0 < reached %}
+    {% set current_stage = loop.index0 == reached %}
+    <a href="{{ url_for(endpoint, campaign_id=campaign_id) }}" {% if here %}aria-current="page"{% endif %}
+       class="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors {{ 'bg-white/5 text-white' if here else ('text-gray-300 hover:text-white' if done or current_stage else 'text-gray-400 hover:text-gray-300') }}">
+      <span aria-hidden="true"
+            class="grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[9px] font-bold tabular-nums {{ 'border-amber-500/50 text-amber-400' if done else ('border-amber-500/60 bg-amber-500/10 text-amber-400' if current_stage else 'border-white/15 text-faint') }}">
+        {{ '✓' if done else loop.index }}
+      </span>
+      {{ label }}
+    </a>
+    {% if not loop.last %}
+    <span aria-hidden="true" class="h-px w-2.5 shrink-0 sm:w-4 {{ 'bg-amber-500/50' if loop.index0 < reached else 'bg-white/10' }}"></span>
+    {% endif %}
+    {% endfor %}
+    <span class="mx-1.5 hidden h-4 w-px shrink-0 bg-white/10 sm:block" aria-hidden="true"></span>
+    <a href="{{ url_for('reach.placements', campaign_id=campaign_id) }}"
+       class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold {{ 'bg-white/5 text-white' if active == 'placements' else 'text-faint hover:text-gray-300' }}">Placements</a>
+    <a href="{{ url_for('reach.needs_you', campaign_id=campaign_id) }}"
+       class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-faint hover:text-gray-300">Needs You</a>
+  </nav>
+  {% endif %}
+
+  {% block reach_content %}{% endblock %}
+</main>
+
+<nav aria-label="Primary" class="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.08] bg-[#0d0d0f]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+  <div class="grid grid-cols-5">
+    {% set mobile_nav = [
+      ('reach.index', 'Home', 'M3 10.5L12 3l9 7.5M5 9.5V21h14V9.5'),
+      ('reach.all_opportunities', 'Finds', 'M12 3l2.4 6.1L21 12l-6.6 2.9L12 21l-2.4-6.1L3 12l6.6-2.9z'),
+      ('reach.campaigns_list', 'Campaigns', 'M3 11l14-5v12L3 13v-2zm14 1h4M7 14v5h3v-4'),
+      ('reach.all_responses', 'Responses', 'M4 6h16v12H4zM4 7l8 6 8-6'),
+      ('reach.advanced', 'More', 'M5 12h.01M12 12h.01M19 12h.01'),
+    ] %}
+    {% for endpoint, label, icon in mobile_nav %}
+    {% set here = ep == endpoint or (endpoint == 'reach.campaigns_list' and campaign_id) %}
+    <a href="{{ url_for(endpoint) }}" {% if here %}aria-current="page"{% endif %}
+       class="flex flex-col items-center gap-0.5 py-2 text-[10px] font-semibold {{ 'text-amber-400' if here else 'text-gray-400' }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="{{ icon }}"/></svg>
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+</nav>
+
+<div id="reach-toast" class="pointer-events-none fixed bottom-20 left-1/2 z-50 hidden -translate-x-1/2 rounded-lg border border-white/10 bg-[#171719] px-4 py-2.5 text-sm shadow-xl md:bottom-6"></div>
+
+<script>
+  function reachToast(message, ok) {
+    const el = document.getElementById('reach-toast');
+    el.textContent = message;
+    el.className = 'pointer-events-none fixed bottom-20 md:bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2.5 text-sm shadow-xl '
+      + (ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => { el.classList.add('hidden'); }, 4200);
+  }
+
+  async function reachPost(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+    let data = {};
+    try { data = await response.json(); } catch (e) { data = { ok: false, error: 'Unexpected response' }; }
+    if (!data.ok) { reachToast(data.error || 'Request failed', false); }
+    return data;
+  }
+
+  document.addEventListener('click', async (event) => {
+    document.querySelectorAll('details.reach-menu[open]').forEach((menu) => {
+      if (!menu.contains(event.target)) { menu.open = false; }
+    });
+
+    const button = event.target.closest('[data-post]');
+    if (!button) return;
+    event.preventDefault();
+    const payload = button.dataset.payload ? JSON.parse(button.dataset.payload) : {};
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = button.dataset.busy || 'Working…';
+    const data = await reachPost(button.dataset.post, payload);
+    button.disabled = false;
+    button.textContent = original;
+    if (data.ok) {
+      reachToast(button.dataset.success || 'Done', true);
+      // Every completed action should hand the user its next step: a button
+      // with data-next navigates there instead of reloading in place.
+      if (button.dataset.next) {
+        setTimeout(() => { window.location = button.dataset.next; }, 600);
+      } else if (button.dataset.reload !== 'false') {
+        setTimeout(() => window.location.reload(), 600);
+      }
+    }
+  });
+</script>
+{% endblock %}

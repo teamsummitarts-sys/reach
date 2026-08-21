@@ -1,0 +1,93 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Opportunities — {{ campaign.name }}{% endblock %}
+
+{% block reach_content %}
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Pipeline') }}
+  <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+    {% for stage in pipeline_counts %}
+    <div class="rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+      <div class="text-lg font-bold tabular-nums">{{ stage.count }}</div>
+      <div class="text-[10px] uppercase tracking-[0.15em] text-gray-400">{{ stage.label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<nav aria-label="Filter by status" class="flex flex-wrap gap-1.5">
+  <a href="{{ url_for('reach.opportunities', campaign_id=campaign.id) }}"
+     class="rounded-full border px-3 py-1 text-[11px] font-semibold {{ 'border-amber-500/40 bg-amber-500/15 text-amber-400' if not selected_status else 'border-white/10 text-gray-400 hover:text-gray-300' }}">All</a>
+  {% for status in statuses %}
+  {% if status_counts.get(status) %}
+  <a href="{{ url_for('reach.opportunities', campaign_id=campaign.id, status=status) }}"
+     class="rounded-full border px-3 py-1 text-[11px] font-semibold {{ 'border-amber-500/40 bg-amber-500/15 text-amber-400' if selected_status == status else 'border-white/10 text-gray-400 hover:text-gray-300' }}">
+    {{ status.replace('_',' ') }} <span class="tabular-nums">{{ status_counts[status] }}</span>
+  </a>
+  {% endif %}
+  {% endfor %}
+</nav>
+
+{% if targets %}
+{# Desktop: a scannable table. Phone: cards, because six columns never fit. #}
+<section class="hidden overflow-hidden rounded-xl border border-white/[0.08] bg-[#111113] md:block">
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[820px] text-left text-sm">
+      <thead>
+        <tr class="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.15em] text-gray-400">
+          <th class="px-4 py-2.5 font-medium">Opportunity</th>
+          <th class="px-4 py-2.5 font-medium">Type</th>
+          <th class="px-4 py-2.5 font-medium">Status</th>
+          <th class="px-4 py-2.5 font-medium">Match</th>
+          <th class="px-4 py-2.5 font-medium">Risk</th>
+          <th class="px-4 py-2.5 font-medium">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for target in targets %}
+        <tr class="border-b border-white/[0.06] transition-colors last:border-0 hover:bg-white/[0.03]">
+          <td class="px-4 py-2.5">
+            <a href="{{ url_for('reach.target_detail', campaign_id=campaign.id, target_id=target.id) }}" class="block">
+              <span class="block max-w-[280px] truncate font-semibold">{{ target.outlet_name }}</span>
+              <span class="text-[11px] text-faint">{{ target.outlet_domain or '' }}</span>
+            </a>
+          </td>
+          <td class="px-4 py-2.5 text-xs text-gray-400">{{ (target.outlet_kind or '').replace('_',' ') }}</td>
+          <td class="px-4 py-2.5">{{ ui.status_badge(target.status) }}</td>
+          <td class="px-4 py-2.5 align-top">{{ ui.score_breakdown(target.reach_score, target.score_components, component_labels) }}</td>
+          <td class="px-4 py-2.5">{{ ui.risk_badge(target.risk_band) }}</td>
+          <td class="px-4 py-2.5">{{ ui.target_actions(target, campaign.id) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="space-y-2 md:hidden">
+  {% for target in targets %}
+  <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-4">
+    <div class="flex items-start justify-between gap-3">
+      <a href="{{ url_for('reach.target_detail', campaign_id=campaign.id, target_id=target.id) }}" class="min-w-0">
+        <div class="truncate text-sm font-semibold text-gray-100">{{ target.outlet_name }}</div>
+        <div class="mt-0.5 text-[11px] uppercase tracking-wide text-faint">{{ (target.outlet_kind or 'UNKNOWN').replace('_',' ') }}{% if target.outlet_domain %} · {{ target.outlet_domain }}{% endif %}</div>
+      </a>
+      {{ ui.score_breakdown(target.reach_score, target.score_components, component_labels) }}
+    </div>
+    <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+      {{ ui.status_badge(target.status) }}
+      {{ ui.risk_badge(target.risk_band) }}
+      <span class="ml-auto">{{ ui.target_actions(target, campaign.id) }}</span>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+{% elif selected_status %}
+{{ ui.empty('No opportunities in this view.', url_for('reach.opportunities', campaign_id=campaign.id), 'Show all') }}
+{% else %}
+{{ ui.empty('Discovery has not found anything for this campaign yet.', url_for('reach.discover', campaign_id=campaign.id), 'Run discovery') }}
+{% endif %}
+{% endblock %}

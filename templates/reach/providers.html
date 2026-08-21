@@ -1,0 +1,181 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Connections{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Connections</h1>
+  <p class="mt-1 text-sm text-gray-400">Everything REACH can talk to. No green light is ever shown for a service that is not actually connected.</p>
+</section>
+
+{% if global_stop or send_stop %}
+<div class="rounded-xl border border-red-500/25 bg-red-500/5 px-4 py-3 text-xs text-red-300">
+  {% if global_stop %}Global emergency stop is engaged — every provider call is refused.{% endif %}
+  {% if send_stop and not global_stop %}Outreach send stop is engaged — no message can leave.{% endif %}
+</div>
+{% endif %}
+
+{% if encryption_state != 'CONFIGURED' %}
+<div class="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs text-amber-300">
+  Contact encryption key is <span class="font-semibold">{{ encryption_state.replace('_',' ') }}</span> — set
+  <span class="font-mono">REACH_ENCRYPTION_KEY</span> so stored contact values survive a restart. Nothing is stored in plaintext either way.
+</div>
+{% endif %}
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Operations') }}
+  <div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+    {{ ui.metric(observability.pages_fetched, 'Pages fetched') }}
+    {{ ui.metric(observability.pages_blocked, 'Pages blocked') }}
+    {{ ui.metric(observability.duplicate_rate ~ '%', 'Duplicate rate') }}
+    {{ ui.metric(observability.qualified_yield ~ '%', 'Qualified yield') }}
+    {{ ui.metric(observability.stale_sources, 'Stale sources') }}
+    {{ ui.metric(observability.emails_sent, 'Emails sent') }}
+    {{ ui.metric(observability.model_tokens, 'Model tokens') }}
+  </div>
+  {% if observability.providers %}
+  <div class="mt-4 overflow-x-auto border-t border-white/[0.08] pt-3">
+    <table class="w-full min-w-[520px] text-left text-xs">
+      <thead><tr class="text-[10px] uppercase tracking-[0.15em] text-gray-400">
+        <th class="py-1.5 font-medium">Provider</th><th class="py-1.5 font-medium">Calls</th>
+        <th class="py-1.5 font-medium">Units</th><th class="py-1.5 font-medium">OK</th>
+        <th class="py-1.5 font-medium">429</th><th class="py-1.5 font-medium">Errors</th>
+      </tr></thead>
+      <tbody>
+        {% for row in observability.providers %}
+        <tr class="border-t border-white/[0.08]">
+          <td class="py-1.5 font-mono text-gray-300">{{ row.provider }}</td>
+          <td class="py-1.5 tabular-nums text-gray-400">{{ row.calls }}</td>
+          <td class="py-1.5 tabular-nums text-gray-400">{{ row.units }}</td>
+          <td class="py-1.5 tabular-nums text-emerald-400">{{ row.ok }}</td>
+          <td class="py-1.5 tabular-nums {{ 'text-amber-400' if row.rate_limited else 'text-faint' }}">{{ row.rate_limited }}</td>
+          <td class="py-1.5 tabular-nums {{ 'text-red-400' if row.errors else 'text-faint' }}">{{ row.errors }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="space-y-3">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    {{ ui.section('Providers', 'Connection state, capabilities, restrictions and review dates.') }}
+    {% set groups = states | groupby('state') %}
+    <div id="provider-filters" class="flex flex-wrap gap-1.5">
+      <button type="button" class="provider-filter rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-400" data-filter="ALL">
+        All <span class="tabular-nums">{{ states | length }}</span>
+      </button>
+      {% for state_name, rows in groups %}
+      <button type="button" class="provider-filter rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300" data-filter="{{ state_name }}">
+        {{ state_name.replace('_',' ') }} <span class="tabular-nums">{{ rows | list | length }}</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% for state in states %}
+  <div class="provider-card rounded-xl border {{ 'border-red-500/20' if state.kill_switch else 'border-white/[0.08]' }} bg-[#111113] p-5"
+       data-state="{{ state.state }}">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h3 class="text-sm font-semibold">{{ state.display_name }}</h3>
+          {{ ui.state_badge(state.state) }}
+          {% if state.review_due %}<span class="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-400">Policy review due</span>{% endif %}
+          {% if state.kill_switch %}<span class="rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-red-400">Kill switch</span>{% endif %}
+          {% if state.provider == 'spotify' %}<span class="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-400">{{ spotify.quota_mode.replace('_',' ') }}</span>{% endif %}
+        </div>
+        <div class="mt-1 text-[11px] text-faint">{{ state.policy_source }}</div>
+      </div>
+      <div class="flex shrink-0 gap-2">
+        <button type="button" data-post="{{ url_for('reach.mark_reviewed', provider_id=state.provider) }}"
+                data-success="Policy marked reviewed"
+                class="rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5">Mark reviewed</button>
+        <button type="button" data-post="{{ url_for('reach.kill_switch', provider_id=state.provider) }}"
+                data-payload='{"enabled": {{ 'false' if state.kill_switch else 'true' }}}'
+                data-success="Kill switch updated"
+                class="rounded-md border px-2.5 py-1 text-[11px] font-semibold {{ 'border-emerald-500/30 text-emerald-400' if state.kill_switch else 'border-red-500/25 text-red-400' }} hover:bg-white/5">
+          {{ 'Re-enable' if state.kill_switch else 'Kill switch' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 text-[11px] sm:grid-cols-2">
+      <div class="flex justify-between gap-2 border-b border-white/[0.08] py-0.5">
+        <span class="text-gray-400">Credentials</span>
+        <span class="{{ 'text-emerald-400' if state.credentials_present else 'text-gray-400' }}">
+          {{ 'present' if state.credentials_present else (state.missing_credentials | join(', ') or 'none required') }}
+        </span>
+      </div>
+      <div class="flex justify-between gap-2 border-b border-white/[0.08] py-0.5">
+        <span class="text-gray-400">Quota</span>
+        <span class="text-gray-300">{{ state.quota_used }}{% if state.quota_limit %} / {{ state.quota_limit }} ({{ state.quota_pct }}%){% endif %}</span>
+      </div>
+      <div class="flex justify-between gap-2 border-b border-white/[0.08] py-0.5">
+        <span class="text-gray-400">Last success</span>
+        <span class="text-gray-300">{{ state.last_success_at[:16] if state.last_success_at else 'never' }}</span>
+      </div>
+      <div class="flex justify-between gap-2 border-b border-white/[0.08] py-0.5">
+        <span class="text-gray-400">Last error</span>
+        <span class="max-w-[220px] truncate {{ 'text-red-400' if state.last_error else 'text-faint' }}">{{ state.last_error or 'none' }}</span>
+      </div>
+      <div class="flex justify-between gap-2 border-b border-white/[0.08] py-0.5">
+        <span class="text-gray-400">Policy reviewed</span>
+        <span class="text-gray-300">{{ state.last_verified_at[:10] }} → next {{ state.next_review_at[:10] }}</span>
+      </div>
+      <div class="flex justify-between gap-2 border-b border-white/[0.08] py-0.5">
+        <span class="text-gray-400">Retention</span>
+        <span class="text-gray-300">{{ state.retention_days ~ ' days' if state.retention_days else 'not limited' }}</span>
+      </div>
+    </div>
+
+    <div class="mt-3 flex flex-wrap gap-1.5">
+      {% for capability in state.capabilities %}
+      <span class="rounded border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-400">{{ capability.replace('_',' ') }}</span>
+      {% endfor %}
+      {% if not state.capabilities %}<span class="text-[10px] uppercase tracking-wide text-faint">no capabilities enabled</span>{% endif %}
+    </div>
+
+    <div class="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-wide">
+      <span class="{{ 'text-emerald-500' if state.may_send_to_llm else 'text-red-400' }}">{{ 'LLM allowed' if state.may_send_to_llm else 'LLM blocked' }}</span>
+      <span class="{{ 'text-emerald-500' if state.may_embed else 'text-red-400' }}">{{ 'Embeddings allowed' if state.may_embed else 'Embeddings blocked' }}</span>
+      <span class="{{ 'text-emerald-500' if state.may_resolve_contacts else 'text-red-400' }}">{{ 'Contact resolution allowed' if state.may_resolve_contacts else 'Contact resolution blocked' }}</span>
+      {% if state.attribution_required %}<span class="text-gray-400">Attribution required</span>{% endif %}
+      {% if state.human_action_required %}<span class="text-sky-400">Human action required</span>{% endif %}
+    </div>
+
+    {% if state.notes %}
+    <ul class="mt-3 list-disc space-y-0.5 border-t border-white/[0.08] pl-4 pt-3 text-[11px] text-gray-400">
+      {% for note in state.notes %}<li>{{ note }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div id="provider-empty" class="hidden rounded-xl border border-dashed border-white/10 py-8 text-center text-xs text-faint">
+    No providers in this state.
+  </div>
+</section>
+
+<script>
+  document.getElementById('provider-filters').addEventListener('click', (event) => {
+    const button = event.target.closest('.provider-filter');
+    if (!button) return;
+    const filter = button.dataset.filter;
+    document.querySelectorAll('.provider-filter').forEach((other) => {
+      const active = other === button;
+      other.className = 'provider-filter rounded-md border px-2.5 py-1 text-[11px] font-semibold '
+        + (active ? 'border-amber-500/40 bg-amber-500/15 text-amber-400'
+                  : 'border-white/10 text-gray-400 hover:text-gray-300');
+    });
+    let visible = 0;
+    document.querySelectorAll('.provider-card').forEach((card) => {
+      const show = filter === 'ALL' || card.dataset.state === filter;
+      card.classList.toggle('hidden', !show);
+      if (show) visible += 1;
+    });
+    document.getElementById('provider-empty').classList.toggle('hidden', visible > 0);
+  });
+</script>
+{% endblock %}

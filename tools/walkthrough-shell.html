@@ -1,0 +1,458 @@
+<title>Inside REACH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Archivo:wght@400;500;600&family=Martian+Mono:wght@400;600&display=swap">
+
+<style>
+  /* ------------------------------------------------------------------
+     This page exhibits a dark product UI, so it commits to one visual
+     world rather than following the viewer's theme — a light frame around
+     these screens would fight them. Every colour is painted explicitly so
+     the page holds on either host ground.
+
+     The ground is warm-shifted near-black (amber-biased), which is what
+     makes the application's cooler #0a0a0a panels read as genuinely inset
+     rather than as more of the same surface.
+     ------------------------------------------------------------------ */
+  :root {
+    --ground:   #100e0b;
+    --rail:     #17140f;
+    --raised:   #1e1a13;
+    --line:     #2c2519;
+    --line-hi:  #3d3421;
+    --ink:      #f4efe6;
+    --dim:      #9b9282;
+    --dimmer:   #6e675b;
+    --accent:   #f59e0b;
+    --accent-soft: rgba(245, 158, 11, 0.13);
+    --ok:       #34d399;
+
+    --display: "Bricolage Grotesque", "Archivo", ui-sans-serif, system-ui, sans-serif;
+    --body:    "Archivo", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono:    "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); }
+
+  :where(button):focus-visible,
+  :where(a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .wrap {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 3vw, 40px) 72px;
+  }
+
+  /* --- masthead --------------------------------------------------- */
+
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 18px;
+    padding: clamp(28px, 5vw, 52px) 0 20px;
+  }
+
+  .wordmark {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(34px, 6vw, 54px);
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .wordmark em {
+    font-style: normal;
+    color: var(--accent);
+  }
+
+  .standfirst {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--dim);
+    font-size: 15px;
+  }
+
+  /* --- the honesty band, directly under the masthead --------------- */
+
+  .caveats {
+    display: grid;
+    gap: 1px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 34px;
+  }
+
+  .caveat {
+    background: var(--rail);
+    padding: 14px 16px;
+  }
+
+  .caveat b {
+    display: block;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 5px;
+  }
+
+  .caveat span {
+    display: block;
+    color: var(--dim);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* --- layout ------------------------------------------------------ */
+
+  .exhibit {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    gap: clamp(20px, 3vw, 40px);
+    align-items: start;
+  }
+
+  /* --- rail -------------------------------------------------------- */
+
+  .rail { position: sticky; top: 20px; }
+
+  .rail-group + .rail-group { margin-top: 24px; }
+
+  .rail-head {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dimmer);
+    margin: 0 0 8px 2px;
+  }
+
+  .rail-head .short { display: none; }
+
+  .rail-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: none;
+    color: var(--dim);
+    font-family: var(--body);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+  }
+
+  .rail-item:hover { background: var(--raised); color: var(--ink); }
+
+  .rail-item[aria-selected="true"] {
+    background: var(--accent-soft);
+    border-color: rgba(245, 158, 11, 0.34);
+    color: var(--ink);
+  }
+
+  .rail-item .num {
+    flex: none;
+    width: 1.6em;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--dimmer);
+  }
+
+  .rail-item[aria-selected="true"] .num { color: var(--accent); }
+  .rail-item .num.dot { text-align: left; }
+  .rail-label { min-width: 0; }
+
+  /* --- panels ------------------------------------------------------ */
+
+  .panel[hidden] { display: none; }
+
+  .panel-head { max-width: 68ch; margin-bottom: 18px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 8px;
+  }
+
+  .panel-head h2 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(22px, 3vw, 30px);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+
+  .note { margin: 0; color: var(--dim); font-size: 14.5px; }
+
+  .path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 0;
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .path span {
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dimmer);
+  }
+
+  .path code {
+    color: var(--dim);
+    background: var(--raised);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 3px 7px;
+    overflow-wrap: anywhere;
+  }
+
+  /* The bezel is what makes the capture read as a screen rather than as
+     more page. Its inner shadow sits over the app's own background. */
+  .bezel {
+    border: 1px solid var(--line-hi);
+    border-radius: 12px;
+    padding: 7px;
+    background: var(--rail);
+  }
+
+  .mount {
+    border-radius: 7px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+
+  /* --- toast ------------------------------------------------------- */
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%) translateY(12px);
+    z-index: 60;
+    max-width: min(92vw, 460px);
+    padding: 11px 16px;
+    border: 1px solid var(--line-hi);
+    border-radius: 9px;
+    background: var(--raised);
+    color: var(--ink);
+    font-size: 13.5px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+  }
+
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .colophon {
+    margin-top: 44px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--dimmer);
+    font-size: 13px;
+    max-width: 72ch;
+  }
+
+  .colophon b { color: var(--dim); font-weight: 500; }
+
+  /* --- narrow ------------------------------------------------------ */
+
+  @media (max-width: 900px) {
+    .exhibit { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      margin: 0 calc(-1 * clamp(16px, 3vw, 40px));
+      padding: 10px clamp(16px, 3vw, 40px);
+      background: color-mix(in srgb, var(--ground) 94%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 18px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      /* Fades the cut-off edges so it reads as scrollable. */
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+      mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+    }
+
+    .rail::-webkit-scrollbar { display: none; }
+    .rail-group { display: flex; align-items: center; gap: 6px; }
+    .rail-group + .rail-group { margin-top: 0; }
+
+    /* Not sticky here: pinning it left made the items scroll underneath it,
+       and with 15 of them the long label ate most of the strip. */
+    .rail-head { margin: 0 4px 0 0; white-space: nowrap; }
+    .rail-head .long { display: none; }
+    .rail-head .short { display: inline; }
+
+    .rail-item { width: auto; white-space: nowrap; padding: 6px 10px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1 class="wordmark">Inside <em>REACH</em></h1>
+    <p class="standfirst">
+      Fifteen screens, captured from one real end-to-end run: a track goes in, and
+      evidence-backed opportunities, an approved pitch and a recorded placement come out.
+    </p>
+  </header>
+
+  <div class="caveats">
+    <div class="caveat">
+      <b>Static capture</b>
+      <span>Real HTML from a real run, frozen. Links move between screens; buttons do nothing.</span>
+    </div>
+    <div class="caveat">
+      <b>Fixture corpus</b>
+      <span>No search credential was configured, so discovery ran against reserved <code>.example</code> domains. The outlets are test fixtures, not real ones.</span>
+    </div>
+    <div class="caveat">
+      <b>Sender is a test domain</b>
+      <span>Sender health reads green because this run published SPF, DKIM and DMARC for a reserved <code>.example</code> domain. No mail was sent anywhere.</span>
+    </div>
+    <div class="caveat">
+      <b>Sample tracks</b>
+      <span>The catalog is seeded with five demo tracks. Their stream figures are illustrative, which is why every one carries a SAMPLE badge.</span>
+    </div>
+  </div>
+
+  <div class="exhibit">
+    <nav class="rail" role="tablist" aria-label="REACH screens"><!--RAIL--></nav>
+    <main><!--PANELS--></main>
+  </div>
+
+  <p class="colophon">
+    <b>What this is.</b> Each screen below is the application's own rendered HTML and its own
+    stylesheet, isolated in a shadow root so this page's design cannot leak into it or it into
+    this page. Nothing here is a mockup or a screenshot redraw — it is what the running
+    application served. REACH loads no third-party assets, which is why this page needs no
+    network to show them.
+  </p>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<template id="app-css"><style>/*APPCSS*/</style></template>
+<!--TEMPLATES-->
+
+<script>
+(function () {
+  const appCss = document.getElementById('app-css').innerHTML;
+  const toast = document.getElementById('toast');
+  let toastTimer;
+
+  function say(message) {
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+  }
+
+  // Each capture goes in its own shadow root. The application ships a CSS reset,
+  // and without this isolation that reset would restyle the page around it.
+  document.querySelectorAll('[data-mount]').forEach((mount) => {
+    const id = mount.dataset.mount;
+    const source = document.querySelector(`template[data-tpl="${id}"]`);
+    if (!source) return;
+    const root = mount.attachShadow({ mode: 'open' });
+    root.innerHTML =
+      appCss +
+      '<style>:host{display:block;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;' +
+      'font-size:16px;line-height:1.5;}</style>' +
+      '<div class="bg-[#0a0a0a] text-gray-100">' + source.innerHTML + '</div>';
+
+    root.addEventListener('click', (event) => {
+      const link = event.target.closest('a, button');
+      if (!link) return;
+      event.preventDefault();
+      const target = link.dataset.goto;
+      if (target && document.getElementById('panel-' + target)) {
+        show(target);
+      } else if (link.tagName === 'A') {
+        say('That link leaves REACH. This is a static capture, so it is not followed here.');
+      } else {
+        say('Static capture — nothing is sent, saved or approved.');
+      }
+    });
+
+    root.addEventListener('submit', (event) => {
+      event.preventDefault();
+      say('Static capture — nothing is submitted.');
+    });
+  });
+
+  const tabs = [...document.querySelectorAll('.rail-item')];
+
+  function show(id) {
+    document.querySelectorAll('.panel').forEach((panel) => {
+      panel.hidden = panel.dataset.screen !== id;
+    });
+    tabs.forEach((tab) => {
+      const active = tab.dataset.goto === id;
+      tab.setAttribute('aria-selected', String(active));
+      // On narrow screens the rail is a horizontal strip, so the active item
+      // can otherwise sit off-screen after a link jumps between screens.
+      if (active && window.matchMedia('(max-width: 900px)').matches) {
+        tab.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+      }
+    });
+    if (location.hash.slice(1) !== id) history.replaceState(null, '', '#' + id);
+  }
+
+  tabs.forEach((tab) => tab.addEventListener('click', () => {
+    show(tab.dataset.goto);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+
+  const opening = document.getElementById('panel-' + location.hash.slice(1))
+    ? location.hash.slice(1)
+    : tabs[0].dataset.goto;
+  show(opening);
+})();
+</script>

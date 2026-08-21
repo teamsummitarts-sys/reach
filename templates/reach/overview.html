@@ -1,0 +1,138 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — {{ campaign.name }}{% endblock %}
+
+{% block reach_content %}
+
+<section class="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#111113] p-6"
+         style="background-image: radial-gradient(120% 120% at 28% 30%, rgba(234,179,8,0.07), transparent 55%);">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <div class="text-[11px] uppercase tracking-[0.25em] text-amber-500/80">{{ recording.artist_name }}</div>
+      <h1 class="mt-1 text-xl font-bold tracking-tight">{{ recording.title }}</h1>
+      <div class="mt-1 text-xs text-gray-400">{{ campaign.mode }} campaign · {{ settings.territories | join(', ') or 'no territories set' }}</div>
+    </div>
+    {{ ui.status_badge(campaign.status) }}
+  </div>
+
+  {# Where this campaign is and what happens next — stages, never percentages. #}
+  <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+    {{ ui.stage_track(stages, stage) }}
+    <a href="{{ stage_next_url }}"
+       class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-400">
+      {% if stage == 'Setup' or stage == 'Discover' %}Run discovery
+      {% elif stage == 'Opportunities' %}Review opportunities
+      {% elif stage == 'Review' %}Approve messages
+      {% elif stage == 'Outreach' %}Check outreach
+      {% else %}See results{% endif %}
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5" aria-hidden="true"><path d="M7 4l6 6-6 6"/></svg>
+    </a>
+  </div>
+
+  <div class="mt-5 grid grid-cols-3 gap-6 border-t border-white/[0.06] pt-4 sm:grid-cols-6">
+    {{ ui.metric(metrics.discovered, 'Discovered') }}
+    {{ ui.metric(metrics.high_fit, 'High fit', 'text-amber-400') }}
+    {{ ui.metric(metrics.verified, 'Verified') }}
+    {{ ui.metric(metrics.ready, 'Ready') }}
+    {{ ui.metric(metrics.submitted, 'Submitted') }}
+    {{ ui.metric(metrics.placed, 'Placed', 'text-emerald-400') }}
+  </div>
+
+  <div class="mt-5 flex flex-wrap items-center gap-6 border-t border-white/[0.06] pt-4">
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Campaign health</span>
+      {{ ui.score_pill(health.score) }}
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Needs you</span>
+      <span class="text-sm font-bold tabular-nums {{ 'text-amber-400' if task_count else 'text-gray-400' }}">{{ task_count }}</span>
+    </div>
+  </div>
+</section>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+  <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5 lg:col-span-2">
+    {{ ui.section('Pipeline', 'Where every discovered opportunity currently sits. Each target is counted once.') }}
+    <div class="mt-4 space-y-2">
+      {% set stage_max = pipeline_counts | map(attribute='count') | max %}
+      {% for stage_row in pipeline_counts %}
+      <a href="{{ url_for('reach.opportunities', campaign_id=campaign.id) }}"
+         class="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/5">
+        <span class="w-24 shrink-0 text-xs text-gray-400">{{ stage_row.label }}</span>
+        <span class="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+          <span class="block h-full rounded-full bg-amber-500/70" style="width: {{ (stage_row.count / stage_max * 100) if stage_max else 0 }}%"></span>
+        </span>
+        <span class="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-gray-300">{{ stage_row.count }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+    {{ ui.section('Health factors') }}
+    <div class="mt-4 space-y-3">
+      {% for factor in health.factors %}
+      <div>
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="text-xs text-gray-300">{{ factor.label }}</span>
+          <span class="text-xs font-semibold tabular-nums text-gray-400">{{ factor.score }}</span>
+        </div>
+        <div class="mt-1 h-1 overflow-hidden rounded-full bg-white/5">
+          <div class="h-full rounded-full bg-amber-500/60" style="width: {{ factor.score }}%"></div>
+        </div>
+        <div class="mt-1 text-[11px] text-faint">{{ factor.detail }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+  <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+    {{ ui.section('Needs you', 'Routes REACH will not automate.') }}
+    <div class="mt-3 space-y-2">
+      {% for task in tasks %}
+      <div class="rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+        <div class="flex items-start justify-between gap-2">
+          <span class="text-xs font-semibold">{{ task.title }}</span>
+          <span class="shrink-0 text-[10px] uppercase tracking-wide text-faint">{{ task.provider }}</span>
+        </div>
+        <div class="mt-1 text-[11px] text-faint">{{ task.reason }}</div>
+      </div>
+      {% else %}
+      {{ ui.empty('No open tasks.') }}
+      {% endfor %}
+    </div>
+    {% if task_count %}
+    <a href="{{ url_for('reach.needs_you', campaign_id=campaign.id) }}"
+       class="mt-3 inline-block text-xs font-semibold text-amber-400 hover:text-amber-300">Open the queue →</a>
+    {% endif %}
+  </section>
+
+  <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+    {{ ui.section('Baseline and attribution', 'Captured from your own catalog before outreach started.') }}
+    <div class="mt-3 space-y-2">
+      {% for row in attribution %}
+      <div class="rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="text-xs font-semibold">{{ row.metric.replace('_',' ') }}</span>
+          <span class="text-xs tabular-nums text-gray-300">
+            {% if row.state == 'MEASURED' %}{{ '{:+,.0f}'.format(row.delta) }}
+            {%- elif row.get('baseline') is not none %}{{ '{:,.0f}'.format(row.baseline) }}
+            {%- else %}{{ ui.unknown() }}{% endif %}
+          </span>
+        </div>
+        <div class="mt-1 text-[11px] text-faint">{{ row.note }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+{% if stop_reason %}
+<div class="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-300">
+  Discovery stop rule active: {{ stop_reason }}
+</div>
+{% endif %}
+{% endblock %}

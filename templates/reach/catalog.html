@@ -1,0 +1,138 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — My music{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">My music</h1>
+  <p class="mt-1 text-sm text-gray-400">The tracks REACH works from. This is REACH's own catalog — nothing here is read from another application.</p>
+</section>
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Add a track', 'Only a title and an artist are required. Anything you leave blank stays UNKNOWN — REACH will show the gap rather than fill it in.') }}
+  <form id="add-track" class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    {#
+      Placeholders describe the shape of the field rather than showing a
+      plausible value. A realistic-looking example reads as a pre-filled form,
+      and a half-read placeholder submitted as fact is exactly the kind of
+      invented data the rest of REACH refuses to produce.
+    #}
+    {% for name, label, placeholder in [
+      ('title', 'Track title', 'required'),
+      ('artist_name', 'Artist', 'required'),
+      ('isrc', 'ISRC', '12 characters, from your distributor'),
+      ('iswc', 'ISWC', 'from your PRO'),
+      ('upc', 'UPC', 'release barcode'),
+      ('publisher', 'Publisher', 'leave blank if unpublished'),
+      ('writers', 'Writers (comma separated)', 'name, name'),
+      ('producers', 'Producers (comma separated)', 'name, name'),
+      ('alternate_titles', 'Alternate titles (comma separated)', 'other titles this is catalogued under'),
+      ('streams', 'Streams to date', 'whole number'),
+      ('monthly_streams', 'Monthly streams, oldest first (comma separated)', 'number, number, number'),
+      ('reporting_platforms', 'Platforms reporting (comma separated)', 'platform, platform'),
+    ] %}
+    <label class="block">
+      <span class="text-[10px] font-medium uppercase tracking-[0.15em] text-gray-400">{{ label }}</span>
+      <input name="{{ name }}" placeholder="{{ placeholder }}"
+             class="mt-1 w-full rounded-lg border border-white/10 bg-[#090909] px-3 py-2 text-sm outline-none focus:border-amber-500/50">
+    </label>
+    {% endfor %}
+    <div class="flex flex-wrap items-end gap-4 sm:col-span-2 lg:col-span-3">
+      <label class="flex items-center gap-2 text-sm text-gray-300">
+        <input type="checkbox" name="distributed" class="h-4 w-4 rounded border-white/20 bg-[#090909]">
+        Delivered through a distributor
+      </label>
+      <label class="flex items-center gap-2 text-sm text-gray-300">
+        <input type="checkbox" name="splits_confirmed" class="h-4 w-4 rounded border-white/20 bg-[#090909]">
+        Splits confirmed with all collaborators
+      </label>
+      <button type="submit"
+              class="ml-auto rounded-lg border border-amber-500/40 bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-500/25">
+        Add track
+      </button>
+    </div>
+  </form>
+  <p class="mt-3 text-xs text-gray-400">
+    Both checkboxes are three-state in the record: leaving one unticked here stores
+    <span class="font-semibold text-gray-400">no</span>, which release readiness treats differently from a track you never answered for.
+  </p>
+</section>
+
+<section>
+  {{ ui.section('Catalog', tracks | length ~ ' recording' ~ ('' if tracks | length == 1 else 's')) }}
+  {% if tracks %}
+  <div class="mt-3 space-y-2">
+    {% for item in tracks %}
+    <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-semibold">{{ item.recording.title }}</span>
+            {% if item.track.is_sample %}
+            <span class="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400"
+                  title="Sample data shipped with REACH so the pipeline can be tried before you add real tracks. Its figures are illustrative, not measured.">
+              Sample
+            </span>
+            {% endif %}
+          </div>
+          <div class="mt-0.5 text-xs text-gray-400">
+            {{ item.recording.artist_name }} ·
+            {% if item.recording.isrc %}{{ item.recording.isrc }}{% else %}<span class="text-faint">no ISRC</span>{% endif %} ·
+            {% if item.track.streams is not none %}{{ '{:,}'.format(item.track.streams) }} streams{% else %}<span class="inline-flex items-center gap-1">streams {{ ui.unknown() }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <span class="text-[10px] uppercase tracking-[0.15em] text-gray-400">Readiness</span>
+          {{ ui.score_pill(item.readiness.score) }}
+          <a href="{{ url_for('reach.new_campaign', recording_id=item.recording.id) }}"
+             class="rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:border-white/20 hover:text-white">
+            Start campaign
+          </a>
+          {% if item.campaign_count %}
+          <span class="text-[11px] text-gray-400" title="This track has campaign history, so it cannot be deleted without orphaning evidence.">
+            {{ item.campaign_count }} campaign{{ '' if item.campaign_count == 1 else 's' }}
+          </span>
+          {% else %}
+          <button data-post="{{ url_for('reach.delete_track', recording_id=item.recording.id) }}"
+                  data-success="Track removed"
+                  class="rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 transition-colors hover:border-red-500/30 hover:text-red-400">
+            Delete
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-1.5">
+        {% for check in item.readiness.checks %}
+        <span class="rounded-md border px-2 py-0.5 text-[10px] font-semibold {{ 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400' if check.ok else 'border-white/10 text-gray-400' }}"
+              title="{{ check.consequence }}">{{ check.label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="mt-3">{{ ui.empty('No tracks yet. Add one above to start a campaign.') }}</div>
+  {% endif %}
+</section>
+
+<script>
+  document.getElementById('add-track').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const payload = {};
+    new FormData(form).forEach((value, key) => { payload[key] = value; });
+    ['distributed', 'splits_confirmed'].forEach((key) => {
+      payload[key] = form.elements[key].checked ? '1' : '0';
+    });
+    const data = await reachPost('{{ url_for("reach.add_track") }}', payload);
+    if (data.ok) {
+      reachToast('Track added — opening its campaign profile', true);
+      setTimeout(() => {
+        window.location = '{{ url_for("reach.new_campaign") }}?recording_id=' + data.recording_id;
+      }, 700);
+    }
+  });
+</script>
+{% endblock %}

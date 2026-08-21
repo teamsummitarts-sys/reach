@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}REACH — Locked{% endblock %}
+
+{% block content %}
+<main class="grid min-h-screen place-items-center px-4">
+  <div class="w-full max-w-sm">
+    <div class="rounded-xl border border-white/[0.08] bg-[#111113] p-6">
+      <div class="flex items-center gap-2.5">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" class="h-6 w-6 text-amber-500" aria-hidden="true">
+          <circle cx="10" cy="10" r="2"/><path d="M5.8 5.8a6 6 0 000 8.4M14.2 5.8a6 6 0 010 8.4M3 3a10 10 0 000 14M17 3a10 10 0 010 14"/>
+        </svg>
+        <div>
+          <h1 class="text-base font-bold tracking-tight text-gray-100">REACH is locked</h1>
+          <p class="text-xs text-gray-400">This instance belongs to one artist. Enter the access key to open it.</p>
+        </div>
+      </div>
+
+      <form method="post" action="{{ url_for('reach.unlock') }}" class="mt-5">
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="text-[10px] uppercase tracking-[0.18em] text-gray-400" for="key">Access key</label>
+        <input id="key" name="key" type="password" autocomplete="current-password" autofocus required
+               class="mt-1 w-full rounded-lg border {{ 'border-red-500/40' if error else 'border-white/10' }} bg-[#090909] px-3 py-2 text-sm text-gray-100 focus:border-amber-500/50 focus:outline-none">
+        {% if error %}<p class="mt-2 text-xs font-semibold text-red-400" role="alert">{{ error }}</p>{% endif %}
+        <button type="submit" class="mt-4 w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400">Unlock</button>
+      </form>
+    </div>
+    <p class="mt-4 text-center text-[11px] text-faint">
+      Set with <code class="rounded bg-white/5 px-1 py-0.5">REACH_ACCESS_KEY</code> · stays unlocked in this browser for 30 days
+    </p>
+    <p class="mt-2 text-center"><a href="/" class="text-[11px] font-semibold text-gray-400 hover:text-gray-200">← Back to the front page</a></p>
+  </div>
+</main>
+{% endblock %}

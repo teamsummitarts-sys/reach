@@ -1,0 +1,165 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Campaigns{% endblock %}
+
+{% block reach_content %}
+
+<section class="flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Campaigns</h1>
+    <p class="mt-1 text-sm text-gray-400">One campaign per track. Each moves through the same six stages.</p>
+  </div>
+  {# The sticky header already carries the primary New-campaign button on
+     large screens; this one exists only where that one is hidden. #}
+  <a href="{{ url_for('reach.new_campaign') }}" class="rounded-lg bg-amber-500 px-3 py-1.5 text-[13px] font-semibold text-black hover:bg-amber-400 lg:hidden">New campaign</a>
+</section>
+
+{% if campaigns %}
+<section class="flex flex-wrap items-center gap-2" aria-label="Find a campaign">
+  <label class="sr-only" for="campaign-search">Search campaigns</label>
+  <input id="campaign-search" type="search" placeholder="Search by track or artist…"
+         class="w-full max-w-xs rounded-lg border border-white/10 bg-[#111113] px-3 py-1.5 text-sm text-gray-100 placeholder:text-faint focus:border-amber-500/50 focus:outline-none">
+  <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
+    <button type="button" data-status-filter="ALL" aria-pressed="true"
+            class="rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[11px] font-semibold text-amber-400">All <span class="tabular-nums">{{ total }}</span></button>
+    {% for status in ['ACTIVE', 'PAUSED', 'COMPLETED', 'DRAFT', 'CANCELLED'] %}
+    {% if status in ['ACTIVE', 'PAUSED', 'COMPLETED'] or status_counts.get(status) %}
+    <button type="button" data-status-filter="{{ status }}" aria-pressed="false"
+            class="rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300">{{ status.title() }} <span class="tabular-nums">{{ status_counts.get(status, 0) }}</span></button>
+    {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="space-y-3" id="campaign-cards">
+  {% for item in campaigns %}
+  <div data-campaign-card data-status="{{ item.campaign.status }}"
+       data-search="{{ (item.campaign.recording_title ~ ' ' ~ item.campaign.artist_name ~ ' ' ~ item.campaign.name) | lower }}"
+       class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <a href="{{ url_for('reach.overview', campaign_id=item.campaign.id) }}" class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="truncate text-lg font-bold tracking-tight text-gray-100 hover:text-white">{{ item.campaign.recording_title }}</span>
+          {{ ui.mode_badge(item.campaign.mode) }}
+          {{ ui.status_badge(item.campaign.status) }}
+        </div>
+        <div class="mt-0.5 text-xs text-gray-400">{{ item.campaign.artist_name }} · {{ item.campaign.name }}</div>
+      </a>
+      <div class="flex shrink-0 items-center gap-2">
+        {% if item.shared_outlets %}
+        <span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-400"
+              title="Also targeted by another campaign: {{ item.shared_outlets | join(', ') }}. The recontact rules stop double-pitching, but one of these campaigns will reach each outlet first.">
+          {{ item.shared_outlets | length }} shared outlet{{ '' if item.shared_outlets | length == 1 else 's' }}
+        </span>
+        {% endif %}
+        <a href="{{ item.next_url }}" class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-400">Continue →</a>
+        <details class="reach-menu relative">
+          <summary class="flex cursor-pointer list-none rounded-lg border border-white/10 p-1.5 text-gray-400 hover:bg-white/5 hover:text-gray-200 [&::-webkit-details-marker]:hidden" aria-label="Campaign actions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-4 w-4" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+          </summary>
+          <div class="absolute right-0 top-full z-40 mt-2 w-52 rounded-xl border border-white/[0.08] bg-[#111113] p-1.5 text-[13px] shadow-2xl">
+            {% if item.campaign.status == 'ACTIVE' %}
+            <button type="button" data-post="{{ url_for('reach.campaign_status', campaign_id=item.campaign.id) }}"
+                    data-payload='{"status": "PAUSED"}' data-success="Campaign paused"
+                    class="block w-full rounded-lg px-3 py-1.5 text-left text-gray-300 hover:bg-white/5 hover:text-white">Pause campaign</button>
+            {% elif item.campaign.status in ('PAUSED', 'DRAFT') %}
+            <button type="button" data-post="{{ url_for('reach.campaign_status', campaign_id=item.campaign.id) }}"
+                    data-payload='{"status": "ACTIVE"}' data-success="Campaign resumed"
+                    class="block w-full rounded-lg px-3 py-1.5 text-left text-gray-300 hover:bg-white/5 hover:text-white">Resume campaign</button>
+            {% endif %}
+            <a href="{{ url_for('reach.opportunities', campaign_id=item.campaign.id) }}"
+               class="block rounded-lg px-3 py-1.5 text-gray-300 hover:bg-white/5 hover:text-white">View opportunities</a>
+            {% if item.campaign.status != 'COMPLETED' %}
+            <button type="button" data-post="{{ url_for('reach.campaign_status', campaign_id=item.campaign.id) }}"
+                    data-payload='{"status": "COMPLETED"}' data-success="Campaign archived"
+                    class="block w-full rounded-lg px-3 py-1.5 text-left text-gray-400 hover:bg-white/5 hover:text-white">Archive (mark completed)</button>
+            {% else %}
+            <button type="button" data-post="{{ url_for('reach.campaign_status', campaign_id=item.campaign.id) }}"
+                    data-payload='{"status": "ACTIVE"}' data-success="Campaign reactivated"
+                    class="block w-full rounded-lg px-3 py-1.5 text-left text-gray-300 hover:bg-white/5 hover:text-white">Reactivate</button>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="mt-4">{{ ui.stage_bar(item.stages, item.stage) }}</div>
+
+    <div class="mt-4 grid grid-cols-3 gap-4 border-t border-white/[0.06] pt-4 sm:grid-cols-6">
+      {{ ui.metric(item.metrics.discovered, 'Discovered') }}
+      {{ ui.metric(item.metrics.qualified, 'Qualified', 'text-amber-400') }}
+      {{ ui.metric(item.metrics.ready, 'Ready') }}
+      {{ ui.metric(item.metrics.submitted, 'Submitted') }}
+      {{ ui.metric(item.metrics.responses, 'Responses') }}
+      {{ ui.metric(item.metrics.placed, 'Placed', 'text-emerald-400') }}
+    </div>
+  </div>
+  {% endfor %}
+  <div id="campaign-no-match" class="hidden">
+    {{ ui.empty('No campaign matches this search and filter.') }}
+  </div>
+</section>
+{% else %}
+{{ ui.empty('No campaigns yet. Start one from a track below.', url_for('reach.new_campaign'), 'Start a campaign') }}
+{% endif %}
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Start from a track', 'Pick one from your music. Only a title and artist are required — everything else may stay UNKNOWN.') }}
+  <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    {% for recording in recordings %}
+    <a href="{{ url_for('reach.new_campaign', recording_id=recording.id) }}"
+       class="group flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2.5 transition-colors hover:bg-white/10">
+      <span class="min-w-0">
+        <span class="block truncate text-sm font-semibold">{{ recording.title }}</span>
+        <span class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">{{ recording.artist_name }} ·
+          {% if recording.isrc %}{{ recording.isrc }}{% else %}<span class="inline-flex items-center gap-1">ISRC {{ ui.unknown() }}</span>{% endif %}
+        </span>
+      </span>
+      <span class="shrink-0 text-[11px] font-semibold text-amber-400">Launch →</span>
+    </a>
+    {% else %}
+    <p class="text-xs text-faint">No tracks yet.</p>
+    {% endfor %}
+  </div>
+  <p class="mt-3 text-xs text-gray-400">
+    Manage tracks in <a href="{{ url_for('reach.catalog_view') }}" class="text-amber-400 hover:underline">My music</a>.
+  </p>
+</section>
+
+<script>
+  (function () {
+    const search = document.getElementById('campaign-search');
+    if (!search) return;
+    const pills = document.querySelectorAll('[data-status-filter]');
+    const cards = document.querySelectorAll('[data-campaign-card]');
+    const noMatch = document.getElementById('campaign-no-match');
+    let activeStatus = 'ALL';
+
+    function apply() {
+      const query = (search.value || '').trim().toLowerCase();
+      let visible = 0;
+      cards.forEach((card) => {
+        const matches = (!query || card.dataset.search.includes(query))
+          && (activeStatus === 'ALL' || card.dataset.status === activeStatus);
+        card.classList.toggle('hidden', !matches);
+        if (matches) visible += 1;
+      });
+      noMatch.classList.toggle('hidden', visible > 0);
+    }
+
+    search.addEventListener('input', apply);
+    pills.forEach((pill) => pill.addEventListener('click', () => {
+      activeStatus = pill.dataset.statusFilter;
+      pills.forEach((p) => {
+        const on = p === pill;
+        p.setAttribute('aria-pressed', on ? 'true' : 'false');
+        p.className = on
+          ? 'rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[11px] font-semibold text-amber-400'
+          : 'rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300';
+      });
+      apply();
+    }));
+  })();
+</script>
+{% endblock %}

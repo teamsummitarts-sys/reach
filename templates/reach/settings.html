@@ -1,0 +1,143 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Settings{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Settings & safety</h1>
+  <p class="mt-1 text-sm text-gray-400">Sender identity, suppression, kill switches, feature flags and the audit trail.</p>
+</section>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+  <section class="rounded-xl border {{ 'border-emerald-500/20' if health.ready else 'border-amber-500/25' }} bg-[#111113] p-5">
+    <div class="flex items-center justify-between gap-3">
+      {{ ui.section('Sender health') }}
+      <span class="rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide {{ 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' if health.ready else 'border-amber-500/30 bg-amber-500/10 text-amber-400' }}">{{ health.status }}</span>
+    </div>
+    <div class="mt-4 space-y-0.5">
+      {% for check in health.checks %}
+      <div class="flex items-baseline justify-between gap-3 border-b border-white/[0.08] py-1">
+        <span class="text-[11px] uppercase tracking-wide text-gray-400">{{ check.label }}</span>
+        <span class="shrink-0 text-[11px] font-bold {{ 'text-emerald-400' if check.state == 'PASS' else ('text-red-400' if check.state == 'FAIL' else 'text-gray-400') }}">{{ check.state }}</span>
+      </div>
+      <div class="pb-1 text-[10px] text-faint">{{ check.detail }}</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="space-y-6">
+    <section class="rounded-xl border {{ 'border-red-500/25' if (global_stop or send_stop) else 'border-white/[0.08]' }} bg-[#111113] p-5">
+      {{ ui.section('Emergency stops') }}
+      <div class="mt-3 space-y-2">
+        <div class="flex items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-white/5 px-3 py-2">
+          <div>
+            <div class="text-xs font-semibold">Outreach send stop</div>
+            <div class="text-[11px] text-faint">Blocks every send while leaving research running.</div>
+          </div>
+          <button type="button" data-post="{{ url_for('reach.emergency_stop') }}"
+                  data-payload='{"scope": "send", "enabled": {{ 'false' if send_stop else 'true' }}}'
+                  data-success="Send stop updated"
+                  class="shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold {{ 'border-emerald-500/30 text-emerald-400' if send_stop else 'border-red-500/25 text-red-400' }} hover:bg-white/5">
+            {{ 'Release' if send_stop else 'Engage' }}
+          </button>
+        </div>
+        <div class="flex items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-white/5 px-3 py-2">
+          <div>
+            <div class="text-xs font-semibold">Global emergency stop</div>
+            <div class="text-[11px] text-faint">Refuses every provider call, job and send.</div>
+          </div>
+          <button type="button" data-post="{{ url_for('reach.emergency_stop') }}"
+                  data-payload='{"scope": "global", "enabled": {{ 'false' if global_stop else 'true' }}}'
+                  data-success="Global stop updated"
+                  class="shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold {{ 'border-emerald-500/30 text-emerald-400' if global_stop else 'border-red-500/25 text-red-400' }} hover:bg-white/5">
+            {{ 'Release' if global_stop else 'Engage' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Feature flags', 'Phase One non-goals stay off. They exist so the surrounding code has a real switch to test against.') }}
+      <div class="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2">
+        {% for flag in flags %}
+        <div class="flex items-center justify-between gap-2 border-b border-white/[0.08] py-1 text-[11px]">
+          <span class="truncate font-mono text-gray-400">{{ flag.flag }}</span>
+          <span class="shrink-0 font-semibold {{ 'text-emerald-400' if flag.enabled else 'text-faint' }}">{{ 'ON' if flag.enabled else 'OFF' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+      {{ ui.section('Roles', 'Acting as ' ~ principal.email ~ ' (' ~ principal.role ~ ')') }}
+      <p class="mt-2 text-[11px] leading-relaxed text-gray-400">
+        REACH has no session system yet, so it resolves the acting principal from
+        <span class="font-mono">REACH_PRINCIPAL_EMAIL</span> and <span class="font-mono">REACH_PRINCIPAL_ROLE</span>.
+        Permissions are enforced on every privileged call; no model can grant itself one.
+      </p>
+      <div class="mt-3 flex flex-wrap gap-1.5">
+        {% for role in roles %}
+        <span class="rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide {{ 'border-amber-500/40 bg-amber-500/10 text-amber-400' if role == principal.role else 'border-white/10 text-gray-400' }}">{{ role.replace('_',' ') }}</span>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Suppression', 'Global and permanent. REACH never removes an entry.') }}
+  <div class="mt-3 flex flex-wrap gap-2">
+    <label class="sr-only" for="suppress-value">Address or domain to suppress</label>
+    <input id="suppress-value" placeholder="address@example.com"
+           class="flex-1 rounded-md border border-white/10 bg-[#090909] px-2.5 py-1.5 text-sm">
+    <label class="sr-only" for="suppress-reason">Reason for suppression</label>
+    <input id="suppress-reason" placeholder="Reason"
+           class="w-48 rounded-md border border-white/10 bg-[#090909] px-2.5 py-1.5 text-sm">
+    <button type="button" id="add-suppression"
+            class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20">Suppress</button>
+  </div>
+  <div class="mt-3 max-h-64 space-y-1 overflow-y-auto pr-1">
+    {% for record in suppression %}
+    <div class="flex items-center justify-between gap-2 rounded border border-white/[0.08] bg-white/5 px-3 py-1.5 text-[11px]">
+      <span class="font-mono text-gray-400">{{ record.value_hash[:20] }}…</span>
+      <span class="text-gray-400">{{ record.reason }}</span>
+      <span class="shrink-0 text-faint">{{ record.scope }} · {{ record.created_at[:10] }}</span>
+    </div>
+    {% else %}
+    {{ ui.empty('Suppression list is empty.') }}
+    {% endfor %}
+  </div>
+  <p class="mt-2 text-[10px] text-faint">Values are stored as keyed hashes, never as plaintext.</p>
+</section>
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  <div class="flex items-center justify-between gap-3">
+    {{ ui.section('Audit trail', 'Hash-chained. A deleted or edited row breaks the chain.') }}
+    <span class="rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase {{ 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' if chain_ok else 'border-red-500/30 bg-red-500/10 text-red-400' }}">
+      {{ 'Chain verified' if chain_ok else 'Chain broken' }}
+    </span>
+  </div>
+  <div class="mt-3 max-h-80 space-y-1 overflow-y-auto pr-1">
+    {% for event in audit_events %}
+    <div class="flex items-center justify-between gap-3 rounded border border-white/[0.08] bg-white/5 px-3 py-1.5 text-[11px]">
+      <span class="font-mono text-gray-300">{{ event.action }}</span>
+      <span class="min-w-0 flex-1 truncate text-faint">{{ event.entity_type or '' }} {{ (event.entity_id or '')[:20] }}</span>
+      <span class="shrink-0 text-faint">{{ event.created_at[11:19] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+  document.getElementById('add-suppression').addEventListener('click', async () => {
+    const data = await reachPost('{{ url_for("reach.add_suppression") }}', {
+      value: document.getElementById('suppress-value').value,
+      reason: document.getElementById('suppress-reason').value || 'Manual',
+    });
+    if (data.ok) { reachToast('Suppressed', true); setTimeout(() => window.location.reload(), 600); }
+  });
+</script>
+{% endblock %}

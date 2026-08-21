@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+reach.db
+reach.db-wal
+reach.db-shm
+
+# The published walkthrough is a build output, not source. Regenerate it with
+# the capture script rather than committing half a megabyte of frozen HTML.
+docs/preview.html

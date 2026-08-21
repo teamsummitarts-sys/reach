@@ -1,0 +1,89 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Outreach — {{ campaign.name }}{% endblock %}
+
+{% block reach_content %}
+
+<section class="rounded-2xl border {{ 'border-emerald-500/20' if health.ready else 'border-amber-500/25' }} bg-[#111113] p-5">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    {{ ui.section('Sender health') }}
+    <span class="rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide {{ 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' if health.ready else 'border-amber-500/30 bg-amber-500/10 text-amber-400' }}">
+      {{ health.status }}
+    </span>
+  </div>
+  <div class="mt-4 grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
+    {% for check in health.checks %}
+    <div class="flex items-baseline justify-between gap-3 border-b border-white/5 py-1">
+      <span class="text-[11px] uppercase tracking-wide text-gray-400">{{ check.label }}</span>
+      <span class="shrink-0 text-[11px] font-bold
+        {{ 'text-emerald-400' if check.state == 'PASS' else ('text-red-400' if check.state == 'FAIL' else 'text-gray-400') }}">{{ check.state }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="mt-3 space-y-0.5">
+    {% for check in health.checks if check.state != 'PASS' %}
+    <div class="text-[11px] text-faint">{{ check.label }}: {{ check.detail }}</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="rounded-2xl border border-white/5 bg-[#111113] p-5">
+  {{ ui.section('Throttles') }}
+  <div class="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+    {{ ui.metric(throttle.sent_today, 'Sent today (campaign)') }}
+    {{ ui.metric(throttle.campaign_limit, 'Campaign daily limit') }}
+    {{ ui.metric(throttle.warmup_cap, 'Warm-up cap') }}
+    {{ ui.metric((throttle.bounce_rate * 100) | round(1), 'Bounce rate %') }}
+  </div>
+  {% if throttle.blockers %}
+  <div class="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+    {{ throttle.blockers | join(' · ') }}
+  </div>
+  {% endif %}
+</section>
+
+<section class="overflow-hidden rounded-2xl border border-white/5 bg-[#111113]">
+  <div class="border-b border-white/5 px-5 py-3">{{ ui.section('Submissions') }}</div>
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[760px] text-left text-sm">
+      <thead>
+        <tr class="border-b border-white/5 text-[10px] uppercase tracking-[0.15em] text-gray-400">
+          <th class="px-4 py-2.5 font-medium">Outlet</th>
+          <th class="px-4 py-2.5 font-medium">Method</th>
+          <th class="px-4 py-2.5 font-medium">Subject</th>
+          <th class="px-4 py-2.5 font-medium">Status</th>
+          <th class="px-4 py-2.5 font-medium">Sent</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for submission in submissions %}
+        <tr class="border-b border-white/5 last:border-0">
+          <td class="px-4 py-2.5 font-semibold">{{ submission.outlet_name }}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-400">{{ submission.method.replace('_',' ') }}</td>
+          <td class="max-w-[280px] truncate px-4 py-2.5 text-xs text-gray-400">{{ submission.subject or '—' }}</td>
+          <td class="px-4 py-2.5">{{ ui.status_badge(submission.status) }}</td>
+          <td class="px-4 py-2.5 text-xs tabular-nums text-gray-400">{{ submission.sent_at[:10] if submission.sent_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-4 py-10 text-center text-xs text-faint">Nothing sent yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if follow_ups %}
+<section class="rounded-2xl border border-white/5 bg-[#111113] p-5">
+  {{ ui.section('Follow-ups due', 'Never sent after a decline, a bounce or an opt-out.') }}
+  <div class="mt-3 space-y-1.5">
+    {% for follow_up in follow_ups %}
+    <div class="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-1.5 text-xs">
+      <span>{{ follow_up.outlet_name }}</span>
+      <span class="text-gray-400">due {{ follow_up.due_at[:10] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

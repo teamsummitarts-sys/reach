@@ -1,0 +1,51 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Responses{% endblock %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Responses</h1>
+  <p class="mt-1 text-sm text-gray-400">What came back, across every campaign. REACH records replies — it never answers for you.</p>
+</section>
+
+{% if follow_ups %}
+<section class="rounded-xl border border-amber-500/25 bg-[#111113] p-5">
+  {{ ui.section('Follow-ups due', 'One follow-up after 14 quiet days. Never after a decline, a bounce or an opt-out.') }}
+  <div class="mt-3 space-y-1.5">
+    {% for f in follow_ups %}
+    <a href="{{ url_for('reach.target_detail', campaign_id=f.campaign_id, target_id=f.target_id) }}"
+       class="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2 text-xs transition-colors hover:bg-white/10">
+      <span class="font-semibold text-gray-100">{{ f.outlet_name }}</span>
+      <span class="tabular-nums text-gray-400">due {{ f.due_at[:10] }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if responses %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113]">
+  <div class="border-b border-white/[0.06] px-5 py-3">{{ ui.section('All responses') }}</div>
+  <ol class="divide-y divide-white/[0.06]">
+    {% for r in responses %}
+    <li>
+      <a href="{{ url_for('reach.target_detail', campaign_id=r.campaign_id, target_id=r.target_id) }}"
+         class="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-white/[0.03]">
+        {{ ui.status_badge(r.kind) }}
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-semibold text-gray-100">{{ r.outlet_name }}</span>
+          {% if r.body_excerpt %}<span class="block truncate text-xs text-gray-400">&ldquo;{{ r.body_excerpt }}&rdquo;</span>{% endif %}
+        </span>
+        <span class="shrink-0 text-[11px] tabular-nums text-faint">{{ r.received_at[:10] }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% else %}
+{{ ui.empty('No responses recorded yet. When an outlet replies, log it from that opportunity\'s page and it appears here.', url_for('reach.all_opportunities'), 'View opportunities') }}
+{% endif %}
+
+{% endblock %}
