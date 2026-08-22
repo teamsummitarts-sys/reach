@@ -314,6 +314,147 @@ def test_sweep_route_drains_in_chunks_and_reports_honestly(client, watched_fixtu
     assert data["events"] == len(radar.events()) > 0
 
 
+# --- Trend Watch (v2) --------------------------------------------------------
+
+def test_trend_queries_come_only_from_supplied_profile_values(recording):
+    # No profile genres, no watchlist: nothing to ask about, so no queries.
+    assert radar.plan_trend_queries(radar.rbac.current_principal().tenant_id) == []
+
+    profile_id = profile.get_or_create(recording["id"])
+    profile.set_field(profile_id, "primary_genre", "dark electronic")
+    profile.set_field(profile_id, "microgenres", ["industrial"])
+    radar.add_artist("Grey Pulse")
+
+    queries = radar.plan_trend_queries(radar.rbac.current_principal().tenant_id)
+    texts = [q["query"] for q in queries]
+    assert '"dark electronic" tiktok trend' in texts
+    assert '"dark electronic" viral' in texts
+    assert '"industrial" playlist trend' in texts
+    assert '"Grey Pulse" viral OR tiktok' in texts
+    assert len(queries) <= radar.TREND_SEARCH_CAP
+
+    genre_tagged = [q for q in queries if q["genre_tag"]]
+    assert all(q["artist_id"] is None for q in genre_tagged)
+
+
+def test_trend_sweep_stores_genre_tagged_events_with_honest_kinds(complete_profile):
+    radar.start_sweep()
+    radar.run_to_completion()
+
+    trends = radar.trend_events()
+    assert trends, "the fixture corpus contains a trend article for the lane"
+    assert all(event["kind"] in (radar.TREND, radar.KIND_UNKNOWN) for event in trends)
+
+    pulsewire = next(e for e in trends if e["domain"] == "pulsewire.example")
+    assert pulsewire["kind"] == radar.TREND
+    assert pulsewire["genre_tag"] == "dark electronic"
+    assert pulsewire["watched_artist_id"] is None
+    assert "dark electronic" in pulsewire["excerpt"].lower()
+    packet = evidence.get(pulsewire["evidence_id"])
+    assert packet is not None and packet["source_url"] == pulsewire["url"]
+
+    # A page found by a trend query with no clear trend signal stays UNKNOWN —
+    # it is never promoted into a fabricated trend.
+    assert not any(event["kind"] == radar.TREND and "trend" not in
+                   ((event["title"] or "") + (event["excerpt"] or "")).lower()
+                   and "viral" not in ((event["title"] or "") + (event["excerpt"] or "")).lower()
+                   for event in trends if event["domain"] == "pulsewire.example")
+
+
+def test_genre_level_events_have_null_artist_and_stay_out_of_the_coverage_feed(complete_profile):
+    radar.start_sweep()
+    radar.run_to_completion()
+
+    coverage = radar.events()
+    assert all(event["watched_artist_id"] for event in coverage)
+    assert all(event["kind"] != radar.TREND for event in coverage)
+
+    genre_level = [e for e in radar.trend_events() if e["watched_artist_id"] is None]
+    assert genre_level, "genre queries produced genre-level events"
+    for event in genre_level:
+        assert event["genre_tag"]
+        assert event["artist_name"] is None
+        assert radar.get_event(event["id"]) is not None
+
+
+def test_trend_family_cap_is_enforced_inside_the_total(monkeypatch, complete_profile, watched_fixture_artists):
+    radar.start_sweep()
+    jobs.run_pending(limit=1)  # plan the full query family first
+    monkeypatch.setattr(radar, "TREND_SEARCH_CAP", 1)
+    radar.run_to_completion()
+
+    state = radar.state()
+    assert state["trend_searches_used"] == 1
+    assert state["searches_used"] <= radar.SWEEP_SEARCH_CAP
+    # The per-artist coverage family still ran in full alongside the capped
+    # trend family: 2 artists x 3 queries, plus the one trend search.
+    assert state["searches_used"] == 7
+
+    skipped = db.query(
+        "SELECT result_json FROM job_run WHERE kind = 'RADAR_SEARCH' "
+        "AND result_json LIKE '%TREND_CAP%'"
+    )
+    assert skipped, "capped trend searches are recorded as skips, not hidden"
+
+
+def test_the_sweep_caps_are_the_specified_ones():
+    assert radar.SWEEP_SEARCH_CAP == 80
+    assert radar.TREND_SEARCH_CAP == 20
+
+
+def test_platform_domains_never_become_trend_sources(monkeypatch, complete_profile):
+    def fake_search(query, limit=10, campaign_id=None):
+        return provider_base.AdapterResponse("open_web_search", provider_base.FIXTURE, [
+            {"rank": 1, "url": "https://www.tiktok.com/tag/darkelectronic"},
+            {"rank": 2, "url": "https://www.instagram.com/explore/tags/industrial/"},
+            {"rank": 3, "url": "https://pulsewire.example/trends/dark-electronic-tiktok"},
+        ])
+
+    monkeypatch.setattr(radar.search_provider, "search", fake_search)
+    radar.start_sweep()
+    radar.run_to_completion()
+
+    domains = {event["domain"] for event in radar.trend_events()}
+    assert domains == {"pulsewire.example"}
+    assert not db.query(
+        "SELECT id FROM coverage_event WHERE domain LIKE '%tiktok%' OR domain LIKE '%instagram%'"
+    )
+
+
+def test_a_trend_event_can_be_targeted_through_the_same_flow(campaign_id):
+    radar.start_sweep()
+    radar.run_to_completion()
+    event = next(e for e in radar.trend_events() if e["domain"] == "pulsewire.example")
+
+    result = radar.target_event(event["id"], campaign_id)
+    target = campaigns.get_target(result["target_id"])
+    assert target is not None
+    assert scoring.latest_score(target["id"]) is not None
+    assert scoring.latest_risk(target["id"]) is not None
+    assert compliance.latest_decision(target["id"]) is not None
+
+    # A genre-level finding attaches trend evidence, not peer coverage — the
+    # outlet wrote about the lane, not about a watched artist.
+    packets = evidence.for_entity("outlet", result["outlet_id"], field="trend_coverage")
+    assert packets and packets[0]["source_url"] == event["url"]
+    assert not evidence.for_entity("outlet", result["outlet_id"], field="peer_coverage")
+
+    refreshed = radar.get_event(event["id"])
+    assert refreshed["targeted_target_id"] == target["id"]
+
+
+def test_the_radar_page_renders_both_sections_with_both_budgets(client, complete_profile, watched_fixture_artists):
+    radar.start_sweep()
+    radar.run_to_completion()
+    body = client.get("/reach/radar").get_data(as_text=True)
+    assert "Coverage found" in body
+    assert "Trends in your lane" in body
+    assert f"of {radar.SWEEP_SEARCH_CAP} per sweep" in body
+    assert "trend family" in body and f"of {radar.TREND_SEARCH_CAP}" in body
+    assert "pulsewire.example" in body
+    assert "TREND" in body
+
+
 def test_jobs_are_cancellable_mid_sweep(watched_fixture_artists):
     radar.start_sweep()
     jobs.run_pending(limit=1)  # plan only

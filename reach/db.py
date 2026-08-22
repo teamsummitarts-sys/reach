@@ -675,6 +675,44 @@ MIGRATIONS = [
         updated_at TEXT NOT NULL
     );
     """,
+    # 10 — Radar Trend Watch: genre-level trend events. coverage_event is
+    # rebuilt (SQLite cannot drop NOT NULL in place) so watched_artist_id may
+    # be NULL for genre-level findings, and genre_tag records which genre the
+    # trend query came from. The TREND kind itself is vocabulary, enforced in
+    # code like every other kind. radar_state gains the trend family's own
+    # search counter so both spends can be reported honestly.
+    """
+    CREATE TABLE coverage_event_v2 (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        watched_artist_id TEXT REFERENCES watched_artist(id),
+        genre_tag TEXT,
+        outlet_id TEXT REFERENCES outlet(id),
+        url TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        title TEXT,
+        kind TEXT NOT NULL,
+        excerpt TEXT,
+        evidence_id TEXT REFERENCES evidence_packet(id),
+        retrieved_at TEXT NOT NULL,
+        dedup_key TEXT NOT NULL,
+        targeted_target_id TEXT REFERENCES campaign_target(id),
+        created_at TEXT NOT NULL,
+        UNIQUE (tenant_id, dedup_key)
+    );
+    INSERT INTO coverage_event_v2 (id, tenant_id, watched_artist_id, genre_tag,
+        outlet_id, url, domain, title, kind, excerpt, evidence_id, retrieved_at,
+        dedup_key, targeted_target_id, created_at)
+    SELECT id, tenant_id, watched_artist_id, NULL, outlet_id, url, domain, title,
+        kind, excerpt, evidence_id, retrieved_at, dedup_key, targeted_target_id,
+        created_at
+    FROM coverage_event;
+    DROP TABLE coverage_event;
+    ALTER TABLE coverage_event_v2 RENAME TO coverage_event;
+    CREATE INDEX idx_coverage_artist ON coverage_event(watched_artist_id, retrieved_at);
+    CREATE INDEX idx_coverage_domain ON coverage_event(tenant_id, domain);
+    ALTER TABLE radar_state ADD COLUMN trend_searches_used INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 
