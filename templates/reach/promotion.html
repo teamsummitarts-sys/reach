@@ -12,9 +12,9 @@
     research tool, not a storefront. #}
 {% macro open_service(service, leaving, detail, demoted=False) %}
 <div class="{{ 'mt-2' if demoted else '' }}">
-  <button type="button" data-post="{{ url_for('reach.promotion_open_external', service_id=service.id) }}"
-          data-reload="false"
-          class="inline-flex shrink-0 items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200">Open service</button>
+  <a href="{{ url_for('reach.promotion_open_external', service_id=service.id) }}"
+     target="_blank" rel="noopener noreferrer nofollow"
+     class="inline-flex shrink-0 items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200">Open service</a>
   <p class="mt-1 text-[10px] text-faint">{{ leaving }} {{ detail }}</p>
 </div>
 {% endmacro %}
@@ -80,6 +80,11 @@
         <span id="promo-searches" class="tabular-nums">Searches used: {{ promo_state.searches_used }} of {{ search_cap }} per sweep</span>
         <span>Re-swept after {{ sweep_stale_days }} days</span>
       </div>
+      {% if queries_not_run %}
+      <p id="promo-cap-note" class="mt-2 text-xs text-amber-400">
+        {{ queries_not_run }} of {{ queries_not_run + promo_state.searches_used }} planned queries were not run — the sweep hit its search cap.
+      </p>
+      {% endif %}
     </div>
     <button type="button" id="promo-sweep"
             class="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/25">
@@ -161,7 +166,8 @@
       <span class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{{ service_type.replace('_',' ') }}</span>
       {% endfor %}
       <span class="ml-auto text-xs text-gray-400">
-        {% if service.pricing_min is none %}Pricing {{ ui.unknown() }}
+        {% if service.pricing_model == 'FREE_SUBMISSION' %}Submissions are free
+        {% elif service.pricing_min is none %}Pricing {{ ui.unknown() }}
         {% elif item.pricing_current %}From {{ money(service.pricing_min, service.pricing_currency) }}
         {% else %}From {{ money(service.pricing_min, service.pricing_currency) }} as of {{ (service.pricing_last_verified_at or '')[:10] }}
         {% endif %}
@@ -274,7 +280,7 @@
     </span>
     {% endfor %}
   </div>
-  <p class="mt-2 text-[11px] text-faint">{{ allocation.basis }}</p>
+  <p class="mt-2 text-[11px] text-faint">{{ allocation.basis }}{% if allocation.caveat %} {{ allocation.caveat }}{% endif %}</p>
 </section>
 {% endif %}
 
@@ -318,7 +324,11 @@
           searchesLabel.textContent = `Searches used: ${data.state.searches_used} of {{ search_cap }} per sweep`;
         }
         if (!data.pending) {
-          reachToast('Research complete', true);
+          // A sweep that ran out of budget did not finish the work, and must
+          // not say it did.
+          reachToast(data.queries_not_run
+            ? `Sweep stopped at its search cap — ${data.queries_not_run} planned queries were not run`
+            : 'Research complete', true);
           setTimeout(() => window.location.reload(), 700);
           return;
         }

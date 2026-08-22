@@ -74,7 +74,10 @@
             <span class="tabular-nums text-faint">{{ entry.created_at[:10] }}</span>
             {{ ui.screening_badge(entry.status) }}
             {% if entry.human_override %}<span class="text-amber-400">manual — {{ entry.override_reason }}</span>{% endif %}
-            <span class="text-faint">score {% if entry.score is none %}UNKNOWN{% else %}{{ entry.score }}{% endif %}</span>
+            <span class="flex items-center gap-1.5 text-faint">score
+              {% if entry.score is none %}{{ ui.unknown() }}
+              {% else %}<span>{{ entry.score }} <span class="text-faint">(measured on {{ entry.coverage }}% of the checks)</span></span>{% endif %}
+            </span>
           </div>
           {% endfor %}
         </div>

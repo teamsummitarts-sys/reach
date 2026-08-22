@@ -147,6 +147,23 @@ SERVICE_TYPE_TO_ALLOCATION = {
     SYNC: "SYNC_SUBMISSIONS",
 }
 
+def allocation_category_for(value):
+    """Accept either vocabulary and return an allocation category.
+
+    Cards hand this the service's own type (ADVERTISING, RADIO, SYNC…), which
+    is not an allocation category; translating here means no call site can get
+    it wrong.
+    """
+    if value in ALLOCATION_CATEGORIES:
+        return value
+    mapped = SERVICE_TYPE_TO_ALLOCATION.get(value)
+    if mapped:
+        return mapped
+    if value in (None, "", SERVICE_TYPE_OTHER):
+        return "OTHER"
+    raise ValidationError(f"Unknown allocation category: {value}")
+
+
 PLANNED = "PLANNED"
 SUBMITTED = "SUBMITTED"
 PAID = "PAID"
@@ -521,21 +538,30 @@ def extract_facts(sanitized):
     return list(facts.values())
 
 
-def extract_category(sanitized):
-    text = " ".join(filter(None, [sanitized.get("title") or "",
+def _joined(sanitized):
+    return " ".join(filter(None, [sanitized.get("title") or "",
                                   sanitized.get("meta_description") or "",
                                   sanitized.get("visible_text") or ""]))
+
+
+def extract_category(sanitized, with_excerpt=False):
+    text = _joined(sanitized)
     for category, pattern in CATEGORY_RULES:
-        if pattern.search(text):
-            return category
-    return CATEGORY_UNKNOWN
+        match = pattern.search(text)
+        if match:
+            return (category, _excerpt_around(text, match)) if with_excerpt else category
+    return (CATEGORY_UNKNOWN, None) if with_excerpt else CATEGORY_UNKNOWN
 
 
-def extract_service_types(sanitized):
-    text = " ".join(filter(None, [sanitized.get("title") or "",
-                                  sanitized.get("meta_description") or "",
-                                  sanitized.get("visible_text") or ""]))
-    return [name for name, pattern in SERVICE_TYPE_RULES if pattern.search(text)]
+def extract_service_types(sanitized, with_excerpt=False):
+    text = _joined(sanitized)
+    found, excerpt = [], None
+    for name, pattern in SERVICE_TYPE_RULES:
+        match = pattern.search(text)
+        if match:
+            found.append(name)
+            excerpt = excerpt or _excerpt_around(text, match)
+    return (found, excerpt) if with_excerpt else found
 
 
 def _parse_money(match):
@@ -580,6 +606,29 @@ def extract_pricing(sanitized):
             "max": max(amounts), "currency": currency, "excerpt": excerpt}
 
 
+_LOGIN_PRICING_CONTEXT = re.compile(
+    r"\b(?:pricing|price|prices|cost|fee|fees|packages?|plans?|rates?)\b", re.I)
+
+
+def pricing_login_wall(sanitized, url=None, pricing_url=None):
+    """A login wall in front of a price, not merely a login wall.
+
+    ``extractor.requires_login`` matches bare words like "dashboard", so a
+    homepage mentioning a member area would otherwise be reported as the reason
+    REACH could not read a price it never looked for.
+    """
+    if not extractor.requires_login(sanitized):
+        return None
+    text = sanitized.get("visible_text") or ""
+    if url and pricing_url and url == pricing_url:
+        match = re.search(r".", text)
+        return _excerpt_around(text, match) if match else None
+    match = _LOGIN_PRICING_CONTEXT.search(_joined(sanitized))
+    if match is None:
+        return None
+    return _excerpt_around(_joined(sanitized), match)
+
+
 def _same_domain_links(sanitized, domain):
     """Terms / privacy / pricing / submission / contact links the page publishes."""
     wanted = {
@@ -621,7 +670,9 @@ def business_model_summary(service):
             AD_PLATFORM: "An advertising service selling ad delivery.",
             RADIO_PROMOTION: "A radio promotion service pitching to stations.",
         }[category])
-    if service["pricing_min"] is not None:
+    if service["pricing_model"] == extractor.FREE_SUBMISSION:
+        parts.append("Submissions are free — no submission fee.")
+    elif service["pricing_min"] is not None:
         currency = service["pricing_currency"] or ""
         if service["pricing_min"] == service["pricing_max"]:
             parts.append(f"Published price: {service['pricing_min']:g} {currency}".strip() + ".")
@@ -742,13 +793,32 @@ def current_packets(service_id):
     packet. Screening reads only the latest retrieval per URL: that is what
     makes a removed guarantee stop blocking, and a newly added one start.
     """
-    rows = evidence.for_entity("promotion_service", service_id)
-    latest = {}
+    # Ordered by rowid, so "newest" is the last row written for a URL rather
+    # than whatever a same-second timestamp tie happens to return first.
+    rows = db.query(
+        "SELECT * FROM evidence_packet WHERE entity_type = ? AND entity_id = ? "
+        "ORDER BY rowid",
+        ("promotion_service", service_id),
+    )
+    # Timestamps are second-granular, so a rescan seconds after the first read
+    # would leave both batches looking current. Every packet from one fetch
+    # carries that fetch's content hash, which is the batch identifier: the
+    # current batch is the newest packet's hash for that URL.
+    newest = {}
     for row in rows:
-        url = row["source_url"]
-        if url not in latest or (row["retrieved_at"] or "") > latest[url]:
-            latest[url] = row["retrieved_at"] or ""
-    return [row for row in rows if (row["retrieved_at"] or "") == latest.get(row["source_url"])]
+        newest[row["source_url"]] = (row["content_hash"], row["retrieved_at"] or "")
+    current = []
+    for row in rows:
+        entry = newest.get(row["source_url"])
+        if entry is None:
+            continue
+        content_hash, retrieved_at = entry
+        if (row["retrieved_at"] or "") != retrieved_at:
+            continue
+        if content_hash is not None and row["content_hash"] != content_hash:
+            continue
+        current.append(row)
+    return current
 
 
 def _packet_value(row):
@@ -816,6 +886,45 @@ def recompute_facts(service_id):
             payload[field] = TRUE
         else:
             payload[field] = FALSE
+
+    # Category, service types, genres and pricing are derived the same way the
+    # tri-states are: from the current read of each page. Write-once category
+    # and a forever-growing type union would keep asserting things no current
+    # page supports.
+    categories, types, genres = [], set(), set()
+    price_mins, price_maxes, currencies, models, priced_at = [], [], [], [], []
+    for row in packets:
+        value = _packet_value(row) or {}
+        if row["supports_field"] == "business_model":
+            if value.get("category") and value["category"] != CATEGORY_UNKNOWN:
+                categories.append(value["category"])
+            types.update(value.get("service_types") or [])
+            genres.update(value.get("genres") or [])
+        elif row["supports_field"] == "pricing" and value.get("min") is not None:
+            price_mins.append(value["min"])
+            price_maxes.append(value.get("max", value["min"]))
+            if value.get("currency"):
+                currencies.append(value["currency"])
+            if value.get("model"):
+                models.append(value["model"])
+            priced_at.append(row["retrieved_at"])
+
+    payload["category"] = categories[0] if categories else CATEGORY_UNKNOWN
+    payload["service_types_json"] = json.dumps(sorted(types))
+    payload["supported_genres_json"] = json.dumps(sorted(genres))
+    if price_mins:
+        payload.update({
+            "pricing_model": models[0] if models else extractor.COST_UNKNOWN,
+            "pricing_min": min(price_mins),
+            "pricing_max": max(price_maxes),
+            "pricing_currency": currencies[0] if currencies else None,
+            "pricing_last_verified_at": max(priced_at),
+        })
+    else:
+        # No current page states a price any more: the old number is not news.
+        payload.update({"pricing_model": extractor.COST_UNKNOWN, "pricing_min": None,
+                        "pricing_max": None, "pricing_currency": None,
+                        "pricing_last_verified_at": None})
 
     if conflicts:
         payload["manual_review_required"] = 1
@@ -1073,13 +1182,37 @@ def _components(facts, signals):
     return components
 
 
+# A renormalized average over one known component is not a score, it is that
+# component wearing a percent sign. Below this share of the total weight REACH
+# has not measured enough to publish a number at all.
+MIN_SCORE_COVERAGE = 0.5
+
+# Freshness says when REACH last read the pages, not what they said. On its own
+# it can never carry a score.
+NON_SUBSTANTIVE_COMPONENTS = {"evidence_freshness"}
+
+
+def score_coverage(components):
+    """Share of the total component weight that is actually known."""
+    return sum(COMPONENT_WEIGHTS[key] for key, value in components.items()
+               if value is not None)
+
+
 def _score(facts, signals):
-    """Weighted over known components only. No component known → NULL, not 0."""
+    """Weighted over known components, or None when too little is known.
+
+    The status is the user-facing truth; this number only ranks services that
+    were measured comparably. UNKNOWN never renormalizes its way to 100.
+    """
     components = _components(facts, signals)
     known = {key: value for key, value in components.items() if value is not None}
     if not known:
         return None
+    if not set(known) - NON_SUBSTANTIVE_COMPONENTS:
+        return None
     weight_sum = sum(COMPONENT_WEIGHTS[key] for key in known)
+    if weight_sum < MIN_SCORE_COVERAGE:
+        return None
     weighted = sum(COMPONENT_WEIGHTS[key] * value for key, value in known.items())
     return round(weighted / weight_sum * 100) if weight_sum else None
 
@@ -1101,11 +1234,54 @@ def latest_override(service_id):
 
 
 def screening_history(service_id, limit=20):
-    return db.query(
+    rows = db.query(
         "SELECT * FROM screening_result WHERE service_id = ? "
         "ORDER BY created_at DESC, rowid DESC LIMIT ?",
         (service_id, limit),
     )
+    return [_with_coverage(row) for row in rows]
+
+
+def _with_coverage(row):
+    """A score is meaningless without how much of the service was measured."""
+    item = dict(row)
+    try:
+        components = json.loads(row["components_json"] or "{}")
+    except (TypeError, ValueError):
+        components = {}
+    item["components"] = components
+    item["coverage"] = round(score_coverage(components) * 100) if components else 0
+    return item
+
+
+def latest_automated_screening(service_id):
+    return db.query_one(
+        "SELECT * FROM screening_result WHERE service_id = ? AND human_override = 0 "
+        "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        (service_id, 1),
+    )
+
+
+def effective_screening(service_id):
+    """The screening row that actually produced the service's current status.
+
+    After an override plus a later automated pass, the newest row is not the
+    one in force — showing its reasons under the effective badge would have the
+    dossier explain a BLOCK with "no guarantee evidence found".
+    """
+    service = get_service(service_id)
+    if service is None:
+        return None
+    latest = latest_screening(service_id)
+    if latest is not None and latest["status"] == service["screening_status"]:
+        return latest
+    for row in db.query(
+        "SELECT * FROM screening_result WHERE service_id = ? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT 20", (service_id,)
+    ):
+        if row["status"] == service["screening_status"]:
+            return row
+    return latest
 
 
 def _worse(current, candidate):
@@ -1218,6 +1394,28 @@ def resolve_review(service_id):
     audit.record("promotion.review_resolved", entity_type="promotion_service",
                  entity_id=service_id, payload={}, actor_kind=audit.ACTOR_USER)
     return True
+
+
+def set_commercial_relationship(service_id, relationship_type, disclosure=None):
+    """Operator-managed: REACH has no way to discover its own arrangements.
+
+    Screening cannot see either field — see screening_inputs — so recording one
+    changes what the UI discloses, never what the ladder decides.
+    """
+    rbac.require("promotion.screen")
+    if relationship_type not in ("NONE", "AFFILIATE", "SPONSORED", "PARTNER"):
+        raise ValidationError(f"Unknown commercial relationship: {relationship_type}")
+    if relationship_type != "NONE" and not (disclosure or "").strip():
+        raise ValidationError("A commercial relationship requires a disclosure to show")
+    db.update("promotion_service", service_id, {
+        "commercial_relationship_type": relationship_type,
+        "commercial_disclosure": (disclosure or "").strip() or None,
+        "updated_at": clock.now_iso(),
+    })
+    audit.record("promotion.commercial_relationship", entity_type="promotion_service",
+                 entity_id=service_id, payload={"type": relationship_type},
+                 actor_kind=audit.ACTOR_USER)
+    return relationship_type
 
 
 def set_note(service_id, text):
@@ -1727,6 +1925,11 @@ def _promo_fetch(context):
     )
 
     if page_state != extractor.PAGE_OK:
+        # A bot challenge or an error page is not the site behind it: nothing
+        # on it may become evidence about a business.
+        audit.record("promotion.page_unusable", entity_type="source_document",
+                     entity_id=document_id,
+                     payload={"url": result.final_url, "page_state": page_state})
         return {"url": result.final_url, "page_state": page_state, "skipped": True,
                 "document_id": document_id}
 
@@ -1777,13 +1980,52 @@ def _promo_fetch(context):
         audit.record("promotion.policy_changed", entity_type="promotion_service",
                      entity_id=service_id, payload={"url": result.final_url})
 
+    # Follow the service's own terms, pricing and submission links. Refunds and
+    # placement policy live on those pages, so a sweep that only ever reads the
+    # page a search returned can never establish enough to screen anything.
+    followed = _follow_declared_links(context, service_id, recorded["links"], tenant_id)
+
     context.enqueue("PROMO_SCREEN", {"service_id": service_id,
                                      "sweep_id": context.payload.get("sweep_id")},
                     idempotency_key=(f"promo:screen:{context.payload.get('sweep_id')}:"
                                      f"{service_id}:{clock.now_iso()}"))
     return {"service_id": service_id, "url": result.final_url,
             "signals": len(recorded["signals"]), "facts": len(recorded["facts"]),
+            "followed": followed,
             "policy_changed": changed and recorded["important"]}
+
+
+# How many of a service's own declared pages one fetch may pull in. Bounded so
+# a link-heavy footer cannot turn one result into a crawl.
+MAX_FOLLOWED_LINKS = 4
+
+
+def _follow_declared_links(context, service_id, links, tenant_id):
+    """Enqueue the service's own terms/pricing/submission pages, once each.
+
+    Same guards as any other fetch — these go through the identical PROMO_FETCH
+    handler, with service_id set so the offer gate does not apply to a page
+    that sells nothing.
+    """
+    seen = {row["source_url"] for row in evidence.for_entity("promotion_service", service_id)}
+    followed = []
+    for field in ("terms_url", "pricing_url", "submission_url", "contact_url"):
+        url = links.get(field)
+        if not url or url in seen or len(followed) >= MAX_FOLLOWED_LINKS:
+            continue
+        try:
+            validated = netguard.validate_url(url, resolve=False)
+        except FetchBlocked:
+            continue
+        if entities.is_platform_domain(validated["domain"]):
+            continue
+        seen.add(url)
+        followed.append(url)
+        context.enqueue("PROMO_FETCH", {"url": url, "service_id": service_id,
+                                        "sweep_id": context.payload.get("sweep_id")},
+                        idempotency_key=(f"promo:follow:{context.payload.get('sweep_id')}:"
+                                         f"{service_id}:{url}"))
+    return followed
 
 
 # Categories whose change on a page is worth a human's attention.
@@ -1821,35 +2063,27 @@ def _record_page_evidence(service_id, sanitized, result, document_id, content_ha
                fact["excerpt"], fact["confidence"])
 
     payload = {"updated_at": clock.now_iso()}
-    category = extract_category(sanitized)
-    if category != CATEGORY_UNKNOWN and service["category"] == CATEGORY_UNKNOWN:
-        payload["category"] = category
-    service_types = extract_service_types(sanitized)
-    if service_types:
-        merged = sorted(set(json.loads(service["service_types_json"] or "[]")) | set(service_types))
-        payload["service_types_json"] = json.dumps(merged)
+    category, category_excerpt = extract_category(sanitized, with_excerpt=True)
+    service_types, types_excerpt = extract_service_types(sanitized, with_excerpt=True)
     genres = extractor.genres(sanitized)
-    if genres:
-        merged = sorted(set(json.loads(service["supported_genres_json"] or "[]")) | set(genres))
-        payload["supported_genres_json"] = json.dumps(merged)
     if category != CATEGORY_UNKNOWN or service_types:
-        packet("business_model", {"category": category, "service_types": service_types},
-               (sanitized.get("meta_description") or sanitized["visible_text"])[:300], 0.6)
+        # The packet carries the passage that justified the claim; the columns
+        # themselves are recomputed from current packets afterwards, so a page
+        # that stops saying something stops asserting it.
+        packet("business_model",
+               {"category": category, "service_types": service_types, "genres": genres},
+               category_excerpt or types_excerpt
+               or (sanitized.get("meta_description") or sanitized["visible_text"])[:300], 0.6)
 
     pricing = extract_pricing(sanitized)
-    if pricing is None and extractor.requires_login(sanitized):
-        # A login wall is a real answer about why the price is unknown, and it
-        # is where REACH stops: no account, no scraping behind it.
-        packet("pricing", {"login_walled": True},
-               sanitized["visible_text"][:200], 0.7)
+    if pricing is None:
+        login_excerpt = pricing_login_wall(sanitized, url=url,
+                                           pricing_url=service["pricing_url"])
+        if login_excerpt:
+            # A login wall is a real answer about why the price is unknown, and
+            # it is where REACH stops: no account, no reading behind it.
+            packet("pricing", {"login_walled": True}, login_excerpt, 0.7)
     if pricing is not None:
-        payload.update({
-            "pricing_model": pricing["model"],
-            "pricing_min": pricing["min"],
-            "pricing_max": pricing["max"],
-            "pricing_currency": pricing["currency"],
-            "pricing_last_verified_at": clock.now_iso(),
-        })
         packet("pricing", {"min": pricing["min"], "max": pricing["max"],
                            "currency": pricing["currency"], "model": pricing["model"]},
                pricing["excerpt"], 0.7)
@@ -1859,20 +2093,23 @@ def _record_page_evidence(service_id, sanitized, result, document_id, content_ha
         if not service[field]:
             payload[field] = href
     if links.get("terms_url") or links.get("contact_url"):
+        label = "terms" if links.get("terms_url") else "contact"
+        match = re.search(label, _joined(sanitized), re.I)
         packet("terms", {"terms_url": links.get("terms_url"),
                          "contact_url": links.get("contact_url")},
-               sanitized["visible_text"][:200], 0.6)
+               _excerpt_around(_joined(sanitized), match) if match
+               else sanitized["visible_text"][:200], 0.6)
     if sanitized.get("title"):
         payload.setdefault("company_name", service["company_name"] or sanitized["title"][:120])
         packet("company_identity", {"name": sanitized["title"][:120], "domain": domain},
-               sanitized["visible_text"][:200], 0.6)
+               sanitized["title"][:200], 0.6)
 
     db.update("promotion_service", service_id, payload)
 
     important = bool(signals) or any(
         FIELD_SUPPORTS.get(fact["field"], "business_model") in _IMPORTANT_SUPPORTS
         for fact in facts) or pricing is not None or bool(links.get("terms_url"))
-    return {"signals": signals, "facts": facts, "important": important}
+    return {"signals": signals, "facts": facts, "links": links, "important": important}
 
 
 @jobs.register("PROMO_SCREEN")
@@ -1927,6 +2164,17 @@ def run_to_completion(max_jobs=500, max_seconds=None, tenant_id=None):
     return processed
 
 
+def skipped_queries(tenant_id=None):
+    """Planned queries the search cap stopped REACH from running."""
+    tenant_id = tenant_id or rbac.current_principal().tenant_id
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM job_run WHERE tenant_id = ? AND kind = 'PROMO_SEARCH' "
+        "AND result_json LIKE '%SEARCH_CAP%'",
+        (tenant_id,),
+    )
+    return row["n"] if row else 0
+
+
 def _maybe_finish(tenant_id):
     if pending_jobs(tenant_id):
         return
@@ -1934,10 +2182,12 @@ def _maybe_finish(tenant_id):
     started, finished = current["last_sweep_started_at"], current["last_sweep_finished_at"]
     if started and (not finished or finished < started):
         _set_state(tenant_id, last_sweep_finished_at=clock.now_iso())
+        # A sweep that ran out of budget is not a sweep that finished the work.
         audit.record("promotion.sweep_finished", entity_type="promotion_state",
                      entity_id=tenant_id,
                      payload={"searches_used": state(tenant_id)["searches_used"],
-                              "search_cap": SWEEP_SEARCH_CAP})
+                              "search_cap": SWEEP_SEARCH_CAP,
+                              "queries_not_run": skipped_queries(tenant_id)})
 
 
 # ---------------------------------------------------------------------------
@@ -1984,8 +2234,10 @@ def add_plan_item(campaign_id, service_id=None, label=None, category="OTHER", am
     campaign = campaigns.get(campaign_id)
     if campaign is None:
         raise ValidationError("Unknown campaign")
-    if category not in ALLOCATION_CATEGORIES:
-        raise ValidationError(f"Unknown allocation category: {category}")
+    # The two vocabularies meet here rather than in every caller: a service
+    # type is translated, an allocation category passes through, anything else
+    # is refused.
+    category = allocation_category_for(category)
 
     service = None
     if service_id:
@@ -2107,6 +2359,13 @@ def suggested_allocation(campaign_id):
     remaining = totals["remaining"]
     if remaining is None or remaining <= 0:
         return None
+    # Items with no amount are real commitments REACH could not price. What is
+    # "left" is therefore an upper bound, and the panel has to say so.
+    caveat = None
+    if totals["unknown_amounts"]:
+        caveat = (f"{totals['unknown_amounts']} planned item"
+                  f"{'s' if totals['unknown_amounts'] != 1 else ''} "
+                  "have no amount and are not subtracted.")
     campaign = campaigns.get(campaign_id)
     dismissed = dismissed_ids(campaign_id)
     qualifying = set()
@@ -2126,6 +2385,7 @@ def suggested_allocation(campaign_id):
     return {
         "categories": [{"category": category, "amount": share} for category in categories],
         "basis": ALLOCATION_BASIS.format(n=len(categories)),
+        "caveat": caveat,
         "currency": totals["currency"],
         "remaining": remaining,
     }
@@ -2158,9 +2418,13 @@ def create_handoff_task(service_id, campaign_id):
     fields = humanactions._copy_ready_answers(recording, facts, values)
     fields.append({"label": "Campaign notes", "value": campaign["name"] or "UNKNOWN"})
     fields.append({"label": "Private streaming link",
-                   "value": values.get("release_narrative") and "See campaign notes"
-                            or "UNKNOWN — add before submitting"})
+                   "value": "UNKNOWN — add before submitting"})
     fields.append({"label": "Artwork", "value": "UNKNOWN — attach before submitting"})
+    if service["pricing_min"] is None:
+        # needs_you renders cost only when it is truthy, so a 0.0 stand-in for
+        # an unread price would present a paid submission as free.
+        fields.append({"label": "Cost",
+                       "value": "UNKNOWN — REACH could not read this service's price"})
 
     slug = re.sub(r"[^a-z0-9]+", "_", (service["name"] or service["canonical_domain"]).lower())
     # No target_id: a promotion purchase is not outreach, and must never flip a
@@ -2316,6 +2580,19 @@ def pricing_is_current(service):
         return False
     days = clock.days_since(service["pricing_last_verified_at"])
     return days is not None and days <= rescreen_window(service["screening_status"])
+
+
+def evidence_view(service_id):
+    """Every packet, marked current or superseded and stale or fresh.
+
+    Evidence is append-only, so the panel would otherwise present a claim a
+    later read of the same page already replaced as though it still stood.
+    """
+    current_ids = {row["id"] for row in current_packets(service_id)}
+    items = []
+    for item in evidence.summary("promotion_service", service_id):
+        items.append({**item, "superseded": item["id"] not in current_ids})
+    return items
 
 
 def review_queue(tenant_id=None):

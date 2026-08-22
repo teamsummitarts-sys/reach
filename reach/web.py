@@ -339,7 +339,7 @@ def _next_best_actions(qualified, drafted, follow_ups):
         actions.append({
             "title": f"{promo['review']} promotion service"
                      f"{'s' if promo['review'] != 1 else ''} require review",
-            "context": "A published policy changed since REACH last screened it",
+            "context": "A published policy changed, or the evidence conflicts",
             "url": url_for("reach.promotion_screening"),
             "icon": "shield",
         })
@@ -1078,6 +1078,7 @@ def promotion_view(campaign_id):
         items=items,
         promo_state=promotion.state(),
         search_cap=promotion.SWEEP_SEARCH_CAP,
+        queries_not_run=promotion.skipped_queries(),
         sweep_stale_days=promotion.PROMO_SWEEP_STALE_DAYS,
         sweep_pending=sweep_pending,
         plan=promotion.plan_items(campaign_id),
@@ -1125,6 +1126,7 @@ def promotion_sweep(campaign_id):
     return jsonify({"ok": True, "jobs_processed": processed,
                     "pending": promotion.pending_jobs(),
                     "state": promotion.state(),
+                    "queries_not_run": promotion.skipped_queries(),
                     "services": len(promotion.campaign_services(campaign_id))})
 
 
@@ -1136,7 +1138,8 @@ def promotion_service(service_id):
         abort(404)
     campaign_id = request.args.get("campaign_id") or None
     fit = promotion.latest_fit(service["id"], campaign_id) if campaign_id else None
-    screening = promotion.latest_screening(service["id"])
+    screening = promotion.effective_screening(service["id"])
+    automated = promotion.latest_automated_screening(service["id"])
     open_campaigns = [row for row in campaigns.list_campaigns()
                       if row["status"] not in (campaigns.COMPLETED, campaigns.CANCELLED)]
     return render_template(
@@ -1145,6 +1148,10 @@ def promotion_service(service_id):
         screening=screening,
         reasons=json.loads(screening["reasons_json"] or "[]") if screening else [],
         signals=json.loads(screening["signals_json"] or "[]") if screening else [],
+        automated=automated,
+        automated_reasons=(json.loads(automated["reasons_json"] or "[]")
+                           if automated and screening
+                           and automated["id"] != screening["id"] else []),
         override=promotion.effective_override(service),
         stale=promotion.is_stale(service),
         pricing_current=promotion.pricing_is_current(service),
@@ -1153,7 +1160,7 @@ def promotion_service(service_id):
         fit_components=(json.loads(fit["components_json"] or "{}")
                         if fit and service["screening_status"] != promotion.BLOCKED else None),
         fit_labels=promotion.FIT_LABELS,
-        evidence_items=evidence.summary("promotion_service", service["id"]),
+        evidence_items=promotion.evidence_view(service["id"]),
         open_campaigns=open_campaigns,
         allocation_categories=promotion.ALLOCATION_CATEGORIES,
         tristate_fields=promotion.TRISTATE_FIELDS,
@@ -1237,9 +1244,14 @@ def promotion_handoff(service_id):
                     "url": url_for("reach.needs_you", campaign_id=data.get("campaign_id"))})
 
 
-@bp.route("/promotion/services/<service_id>/open", methods=["POST"])
+@bp.route("/promotion/services/<service_id>/open")
 def promotion_open_external(service_id):
-    """Leaving REACH is recorded, and is never treated as a payment."""
+    """Leaving REACH is recorded, and is never treated as a payment.
+
+    A GET the browser can actually follow: the card links here with
+    target="_blank", so the redirect lands the person on the provider instead
+    of dying inside a fetch() that cannot read a cross-origin response.
+    """
     service = promotion.canonical_service(service_id)
     if service is None or not service["url"]:
         abort(404)

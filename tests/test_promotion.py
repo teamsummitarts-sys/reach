@@ -167,6 +167,19 @@ def test_sold_coverage_is_caution_not_blocked(monkeypatch):
     assert any("disclosure" in reason for reason in reasons_of(service))
 
 
+def test_guarantee_language_outside_an_offer_is_not_a_block():
+    """The second half of the guard: unnegated guarantee language still needs
+    the site's own offer context — a price, a package, a buy or submit flow."""
+    without_offer = {"title": "Our mission", "meta_description": "",
+                     "visible_text": "Artists deserve better. Guaranteed 20,000 Spotify "
+                                     "streams is what the industry has come to expect."}
+    assert promotion.hard_block_signals(without_offer) == []
+
+    with_offer = dict(without_offer,
+                      visible_text=without_offer["visible_text"] + " Our packages start at $99.")
+    assert promotion.hard_block_signals(with_offer), "the same words in an offer do block"
+
+
 def test_guaranteed_impressions_are_an_advertising_product_not_a_block():
     sanitized = {"title": "Ad packages", "meta_description": "",
                  "visible_text": "Our ad packages start at $500. Guaranteed 100,000 "
@@ -267,6 +280,56 @@ def test_screening_cannot_see_a_commercial_relationship(monkeypatch):
     assert with_affiliate["reasons"] == without["reasons"]
 
 
+def test_the_persisted_verdict_is_identical_with_and_without_an_affiliate_deal(monkeypatch):
+    """The end-to-end half of commercial blindness.
+
+    Injecting a leak just before the db.update in run_screening — "if AFFILIATE
+    and BLOCKED, soften to CAUTION" — passed the projection tests. This asserts
+    the row that actually lands.
+    """
+    swept(monkeypatch)
+    service = by_domain("streamboost.example")
+
+    promotion.set_commercial_relationship(service["id"], "NONE")
+    promotion.run_screening(service["id"])
+    clean = promotion.get_service(service["id"])
+    clean_row = promotion.latest_screening(service["id"])
+
+    promotion.set_commercial_relationship(service["id"], "AFFILIATE",
+                                          "REACH earns a commission")
+    promotion.run_screening(service["id"])
+    affiliated = promotion.get_service(service["id"])
+    affiliated_row = promotion.latest_screening(service["id"])
+
+    assert affiliated["screening_status"] == promotion.BLOCKED
+    assert affiliated["screening_status"] == clean["screening_status"]
+    assert affiliated["block_reason"] == clean["block_reason"]
+    for field in ("status", "score", "components_json", "signals_json", "reasons_json",
+                  "block_reason"):
+        assert affiliated_row[field] == clean_row[field], f"{field} moved with the deal"
+
+
+def test_the_screening_projection_exposes_no_commercial_field(monkeypatch):
+    swept(monkeypatch)
+    service = by_domain("levelpath.example")
+    promotion.set_commercial_relationship(service["id"], "PARTNER", "Joint venture")
+    facts = promotion.screening_inputs(promotion.get_service(service["id"]))
+
+    # The whole key set, not two literal names: a new commercial column added
+    # to the projection later has to fail this.
+    expected = {
+        "id", "name", "canonical_domain", "company_name", "category", "service_types",
+        "pricing_model", "pricing_min", "pricing_max", "pricing_currency",
+        "pricing_last_verified_at", "business_model_summary", "terms_url", "contact_url",
+        "submission_url", "pricing_url", "page_ok_count", "manual_review_required",
+        "fact_freshness", "window_days", "pricing_login_walled",
+    } | set(promotion.TRISTATE_FIELDS)
+    assert set(facts) == expected
+    assert not any("commercial" in key for key in facts)
+    assert "PARTNER" not in json.dumps(facts)
+    assert "Joint venture" not in json.dumps(facts)
+
+
 def test_a_commercial_relationship_is_disclosed_on_card_and_dossier(client, monkeypatch,
                                                                     campaign_id):
     swept(monkeypatch)
@@ -299,7 +362,7 @@ def test_the_search_cap_is_a_recorded_stop_rule(monkeypatch):
     assert skipped, "a spent cap is recorded as a skip, never hidden"
 
 
-def test_the_caps_are_the_specified_ones():
+def test_the_caps_are_the_specified_ones_and_are_actually_applied(monkeypatch):
     assert promotion.SWEEP_SEARCH_CAP == 40
     assert promotion.RESULTS_PER_SEARCH == 8
     assert promotion.RESCREEN_DAYS_SCREENED == 30
@@ -307,6 +370,38 @@ def test_the_caps_are_the_specified_ones():
     assert promotion.RESCREEN_DAYS_BLOCKED == 7
     assert promotion.RESCREEN_DAYS_UNKNOWN == 14
     assert promotion.PROMO_SWEEP_STALE_DAYS == 14
+
+    # The constants have to reach the provider call and the planner, not just
+    # sit in the module.
+    seen = []
+
+    def spy(query, limit=10, campaign_id=None):
+        seen.append(limit)
+        return provider_base.AdapterResponse("open_web_search", provider_base.FIXTURE, [])
+
+    monkeypatch.setattr(promotion.search_provider, "search", spy)
+    promotion.start_sweep()
+    promotion.run_to_completion()
+    assert seen, "the sweep ran at least one search"
+    assert set(seen) == {promotion.RESULTS_PER_SEARCH}
+    assert len(seen) <= promotion.SWEEP_SEARCH_CAP
+    assert len(promotion.plan_queries()) <= promotion.SWEEP_SEARCH_CAP
+
+
+def test_a_spent_cap_is_reported_rather_than_read_as_completion(client, monkeypatch,
+                                                                campaign_id):
+    use_search(monkeypatch, SERVICE_URLS)
+    promotion.set_campaign_promotion(campaign_id, True)
+    promotion.start_sweep()
+    jobs.run_pending(limit=1)
+    monkeypatch.setattr(promotion, "SWEEP_SEARCH_CAP", 1)
+    promotion.run_to_completion()
+
+    not_run = promotion.skipped_queries()
+    assert not_run > 0
+    body = page(client, f"/reach/campaigns/{campaign_id}/promotion")
+    assert "planned queries were not run" in body
+    assert str(not_run) in body
 
 
 # --- 8. fit is a separate axis from safety -----------------------------------
@@ -443,7 +538,16 @@ def test_a_blocked_service_is_refused_from_the_plan(client, planned):
 
     body = page(client, f"/reach/campaigns/{planned}/promotion?view=blocked")
     assert promotion.BLOCKED_STATEMENT in body
-    assert "Add to plan" not in body.split("streamboost.example")[1].split("</div>")[0]
+    # The blocked view renders blocked services and nothing else, so no
+    # add-to-plan control may appear anywhere on it.
+    assert "streamboost.example" in body
+    assert "Add to plan" not in body
+    assert "Add to Promotion Plan" not in body
+    assert promotion.BLOCKED_SUPPORT in body
+
+    dossier = page(client, f"/reach/promotion/services/{blocked['id']}?campaign_id={planned}")
+    assert "Add to Promotion Plan" not in dossier
+    assert "Prepare submission task" not in dossier
 
 
 def test_planning_needs_the_permission(planned):
@@ -511,14 +615,32 @@ def test_the_handoff_is_copy_ready_and_never_an_outreach_submission(monkeypatch,
     assert task["target_id"] is None
     assert task["title"] == f"Submit to {service['name']}"
     values = {field["label"]: field["value"] for field in task["fields"]}
-    assert values["Track name"]
+    assert values["Track name"] == "Midnight Drive"
     assert "Campaign notes" in values
-    assert any(value == "UNKNOWN" or str(value).startswith("UNKNOWN")
-               for value in values.values()), "unknowns stay UNKNOWN, never invented"
+    # Each field REACH cannot know says so by name — not "some value somewhere
+    # is UNKNOWN", which a fabricated artwork line would still satisfy.
+    assert values["Artwork"] == "UNKNOWN — attach before submitting"
+    assert values["Private streaming link"] == "UNKNOWN — add before submitting"
+    assert values["Comparable artists"]
+    assert not any(str(value).strip() == "" for value in values.values())
 
+    # Marking it submitted records no submission and moves no target: a
+    # promotion purchase is not outreach.
     humanactions.set_status(task_id, humanactions.SUBMITTED)
     assert db.query("SELECT id FROM submission") == []
-    assert campaigns.get_target(task["target_id"]) if task["target_id"] else True
+    assert campaigns.get(campaign_id)["status"] != campaigns.COMPLETED
+    assert all(row["status"] != campaigns.SUBMITTED
+               for row in campaigns.targets(campaign_id))
+
+
+def test_an_unreadable_price_is_never_presented_as_free_on_a_handoff(monkeypatch,
+                                                                     campaign_id):
+    swept(monkeypatch)
+    service = by_domain("levelpath.example")
+    db.update("promotion_service", service["id"], {"pricing_min": None, "pricing_max": None})
+    task = humanactions.get(promotion.create_handoff_task(service["id"], campaign_id))
+    values = {field["label"]: field["value"] for field in task["fields"]}
+    assert values["Cost"] == "UNKNOWN — REACH could not read this service's price"
 
 
 def test_a_handoff_is_refused_for_a_service_that_is_not_screened(monkeypatch, campaign_id):
@@ -583,8 +705,12 @@ def test_every_promotion_route_lives_under_reach_and_behind_the_gate(client, mon
 def test_opening_a_service_is_recorded_and_is_not_a_payment(client, monkeypatch):
     swept(monkeypatch)
     service = by_domain("levelpath.example")
-    response = client.post(f"/reach/promotion/services/{service['id']}/open")
+    # A GET the browser can actually follow — a fetch()ed POST could never
+    # deliver the person to a cross-origin destination.
+    response = client.get(f"/reach/promotion/services/{service['id']}/open")
     assert response.status_code == 302
+    assert response.headers["Location"] == service["url"]
+    assert client.post(f"/reach/promotion/services/{service['id']}/open").status_code == 405
     assert any(row["action"] == "promotion.opened_external"
                for row in db.query("SELECT action FROM audit_event"))
     assert db.query("SELECT id FROM promotion_plan_item") == []
@@ -661,6 +787,68 @@ def test_a_guarantee_added_to_the_landing_page_is_caught(monkeypatch):
     refreshed = promotion.get_service(service["id"])
     assert refreshed["screening_status"] == promotion.BLOCKED
     assert refreshed["manual_review_required"] == 1
+
+
+def test_the_landing_page_is_refetched_even_when_it_backs_no_evidence(monkeypatch):
+    """refetch_set must include the declared URLs, not only URLs that happen to
+    back a packet — otherwise a bare landing page is never re-read, and a
+    guarantee added there is invisible forever."""
+    bare = {
+        "https://bare.example/robots.txt": {"status": 200,
+                                            "headers": {"Content-Type": "text/plain"},
+                                            "body": "User-agent: *\nAllow: /\n"},
+        "https://bare.example/": offer_page(
+            "Bare Promo", "<p>We offer campaigns. <a href='/pricing'>Pricing</a></p>"),
+        "https://bare.example/pricing": offer_page(
+            "Pricing | Bare Promo",
+            "<p>Our pricing is $40 per track. The curator decides. "
+            "Refund policy: refunded on request.</p>"),
+    }
+    with_pages(bare)
+    swept(monkeypatch, ["https://bare.example/", "https://bare.example/pricing"])
+    service = by_domain("bare.example")
+
+    # The declared URLs are in the set because they are declared, not because
+    # they happen to back a packet: deleting that block has to fail here.
+    db.update("promotion_service", service["id"],
+              {"terms_url": "https://bare.example/terms-never-read",
+               "submission_url": "https://bare.example/submit-never-read"})
+    refetched = promotion.refetch_set(promotion.get_service(service["id"]))
+    backing = {row["source_url"] for row in promotion.current_packets(service["id"])}
+    for declared in ("https://bare.example/", "https://bare.example/terms-never-read",
+                     "https://bare.example/submit-never-read"):
+        assert declared in refetched
+    assert {"https://bare.example/terms-never-read",
+            "https://bare.example/submit-never-read"} & backing == set()
+
+    with_pages(dict(bare, **{"https://bare.example/": offer_page(
+        "Bare Promo",
+        "<p>We offer campaigns from $40. We guarantee 25,000 Spotify streams.</p>")}))
+    promotion.request_rescan(service["id"])
+    promotion.run_to_completion()
+    assert promotion.get_service(service["id"])["screening_status"] == promotion.BLOCKED
+
+
+def test_a_single_page_service_cannot_be_screened(monkeypatch):
+    """The two-page rung: one page is not enough to describe a business."""
+    single = {
+        "https://onepage.example/robots.txt": {"status": 200,
+                                               "headers": {"Content-Type": "text/plain"},
+                                               "body": "User-agent: *\nAllow: /\n"},
+        "https://onepage.example/": offer_page(
+            "One Page Promo",
+            "<p>One Page Promo Ltd. We offer playlist pitching at $30 per track. "
+            "The curator decides. Refund policy: refunded on request. "
+            "Curators are vetted and playlists are vetted. Contact: "
+            "<a href='https://onepage.example/'>home</a></p>"),
+    }
+    with_pages(single)
+    swept(monkeypatch, ["https://onepage.example/"])
+    service = by_domain("onepage.example")
+
+    assert promotion.page_ok_count(service) == 1
+    assert service["screening_status"] == promotion.UNKNOWN
+    assert "fewer than two pages of this service could be read" in reasons_of(service)
 
 
 # --- 18. definite flips and conflicts ------------------------------------------------
@@ -761,14 +949,42 @@ def test_the_review_flag_can_be_cleared_and_stays_cleared(monkeypatch):
 # --- 23. the suggested allocation -------------------------------------------------
 
 def test_the_allocation_splits_what_is_left_and_states_its_basis(client, planned):
+    # Two screened services in different categories, so "evenly" is exercised
+    # rather than asserted over a single bucket.
+    for service_id, types in ((by_domain("levelpath.example")["id"],
+                               ["CURATOR_SUBMISSIONS"]),):
+        db.update("promotion_service", service_id, {"service_types_json": json.dumps(types)})
+    radio_id = promotion.ensure_service("Airwave Promo", "airwave.example",
+                                        "https://airwave.example/")
+    db.update("promotion_service", radio_id, {
+        "screening_status": promotion.SCREENED,
+        "service_types_json": json.dumps(["RADIO"]),
+    })
     promotion.compute_fits(planned)
+
     allocation = promotion.suggested_allocation(planned)
     assert allocation is not None
-    expected = promotion.ALLOCATION_BASIS.format(n=len(allocation["categories"]))
-    assert allocation["basis"] == expected
-    assert page(client, f"/reach/campaigns/{planned}/promotion").count(expected) == 1
+    categories = [entry["category"] for entry in allocation["categories"]]
+    assert categories == ["CURATOR_SUBMISSIONS", "RADIO_PROMOTION"]
+    # The literal sentence, not a re-derivation of the constant: rewriting
+    # ALLOCATION_BASIS to a false claim has to fail here.
+    assert allocation["basis"] == (
+        "Split evenly across the 2 categories where REACH found at least one "
+        "screened service with a computed campaign fit.")
+    assert page(client, f"/reach/campaigns/{planned}/promotion").count(
+        allocation["basis"]) == 1
+    amounts = {entry["amount"] for entry in allocation["categories"]}
+    assert len(amounts) == 1, "an even split gives every category the same amount"
     total = sum(entry["amount"] for entry in allocation["categories"])
     assert round(total) == round(allocation["remaining"])
+
+
+def test_the_allocation_says_when_unpriced_items_are_not_subtracted(planned):
+    promotion.compute_fits(planned)
+    promotion.add_plan_item(planned, label="Manager retainer", category="OTHER")
+    allocation = promotion.suggested_allocation(planned)
+    assert allocation["caveat"] == (
+        "1 planned item have no amount and are not subtracted.")
 
     # Dismissing the only screened service stops its category qualifying.
     for service in promotion.services():
@@ -848,6 +1064,124 @@ def test_the_screened_badge_never_says_verified(client, monkeypatch, campaign_id
     assert "REACH SCREENED" in body
     assert "VERIFIED" not in body.upper().replace("UNVERIFIED", "")
     assert promotion.ENDORSEMENT_DISCLAIMER in body
+
+
+# --- review fixes: the sweep reaches SCREENED, and no number is invented ----------
+
+def test_an_unstubbed_fixture_sweep_reaches_screened(complete_profile):
+    """The sweep has to follow a service's own terms and pricing links.
+
+    Refund policy and placement discretion live on those pages, so a sweep that
+    only reads the page a search returned can never screen anything — every
+    legitimate service would sit at CAUTION forever.
+    """
+    promotion.start_sweep()
+    promotion.run_to_completion()
+    services = promotion.services()
+    assert services
+    screened = [s for s in services if s["screening_status"] == promotion.SCREENED]
+    assert screened, "an unstubbed fixture-mode sweep produces at least one SCREENED service"
+
+    service = screened[0]
+    assert promotion.page_ok_count(service) >= 2
+    urls = {row["source_url"] for row in promotion.current_packets(service["id"])}
+    assert len(urls) >= 2, "the sweep followed the service's own declared pages"
+
+
+def test_a_score_is_withheld_when_too_little_was_measured(monkeypatch):
+    """A renormalized average over one known component is that component
+    wearing a percent sign. UNKNOWN must not arrive at 100."""
+    swept(monkeypatch)
+    for service in promotion.services():
+        row = promotion.latest_screening(service["id"])
+        coverage = promotion._with_coverage(row)["coverage"]
+        if service["screening_status"] == promotion.UNKNOWN and coverage < 50:
+            assert row["score"] is None, (
+                f"{service['canonical_domain']} scored {row['score']} on {coverage}% coverage")
+
+    # Freshness alone can never carry a score: it says when REACH read the
+    # pages, not what they said.
+    facts = {"fact_freshness": {"company_identity": True}}
+    assert promotion._score(facts, []) is None
+    assert promotion._components(facts, [])["evidence_freshness"] == 1.0
+
+    # And a couple of substantive components is still not enough to publish a
+    # number: identity + terms + freshness is a quarter of the weight, and
+    # renormalizing that to 100 is the exact defect this floor exists to stop.
+    thin = {"name": "Thin Promo", "terms_url": "https://thin.example/terms",
+            "fact_freshness": {"company_identity": True, "terms": True}}
+    assert promotion.score_coverage(promotion._components(thin, [])) < promotion.MIN_SCORE_COVERAGE
+    assert promotion._score(thin, []) is None
+
+    full = dict(thin, business_model_summary="A curator reviewing submissions.",
+                pricing_min=10.0, placement_discretionary=promotion.TRUE,
+                anti_bot_policy=promotion.TRUE, refund_policy=promotion.TRUE,
+                curator_vetting=promotion.TRUE)
+    assert promotion.score_coverage(promotion._components(full, [])) >= promotion.MIN_SCORE_COVERAGE
+    assert promotion._score(full, []) == 100
+
+
+def test_an_unknown_service_is_never_told_it_has_no_guarantees(client, monkeypatch,
+                                                               campaign_id):
+    """The tri-states have no FALSE writer, so `!= 'TRUE'` was `== 'UNKNOWN'`:
+    the dossier reassured the reader about a service it could not read."""
+    swept(monkeypatch)
+    promotion.set_campaign_promotion(campaign_id, True)
+    service = by_domain("gatedpromo.example")
+    assert service["screening_status"] == promotion.UNKNOWN
+    assert service["guaranteed_playlist_placement"] == promotion.TRISTATE_UNKNOWN
+
+    body = page(client, f"/reach/promotion/services/{service['id']}?campaign_id={campaign_id}")
+    assert "Playlist placement is not guaranteed." not in body
+    assert "Streaming volume is not guaranteed." not in body
+    assert "REACH found no guarantee claims in the pages it could read" in body
+    assert promotion.UNKNOWN_STATEMENT in body
+
+
+def test_a_card_can_add_any_service_type_to_the_plan(planned):
+    """Cards hand add_plan_item the service's own type; it translates. Six of
+    nine types used to raise "Unknown allocation category"."""
+    for service_type, expected in promotion.SERVICE_TYPE_TO_ALLOCATION.items():
+        item_id = promotion.add_plan_item(planned, label=f"Test {service_type}",
+                                          category=service_type, amount=1)
+        row = db.query_one("SELECT * FROM promotion_plan_item WHERE id = ?", (item_id,))
+        assert row["allocation_category"] == expected
+
+    # An allocation category still passes through, and nonsense is still refused.
+    item_id = promotion.add_plan_item(planned, label="Direct", category="PRESS_PR")
+    assert db.query_one("SELECT allocation_category FROM promotion_plan_item WHERE id = ?",
+                        (item_id,))["allocation_category"] == "PRESS_PR"
+    with pytest.raises(ValidationError):
+        promotion.add_plan_item(planned, label="Nope", category="NOT_A_CATEGORY")
+
+
+def test_a_paid_media_service_can_be_added_from_its_card(client, planned):
+    service = by_domain("presswire.example")
+    response = client.post(f"/reach/promotion/services/{service['id']}/plan",
+                           json={"campaign_id": planned, "category": "ADVERTISING",
+                                 "amount": "250"})
+    assert response.get_json()["ok"] is True
+
+
+def test_an_unusable_page_is_audited_like_radar_does(monkeypatch):
+    swept(monkeypatch, ["https://cfshield.example/submit"])
+    assert promotion.services() == []
+    assert any(row["action"] == "promotion.page_unusable"
+               for row in db.query("SELECT action FROM audit_event"))
+
+
+def test_superseded_evidence_is_marked_as_such(monkeypatch):
+    swept(monkeypatch)
+    service = by_domain("levelpath.example")
+    with_pages({"https://levelpath.example/terms": offer_page(
+        "Terms | Level Path",
+        "<p>Level Path Reviews Ltd. The curator decides. Rewritten this week.</p>")})
+    promotion.request_rescan(service["id"])
+    promotion.run_to_completion()
+
+    items = promotion.evidence_view(service["id"])
+    assert any(item["superseded"] for item in items), "the replaced read is marked"
+    assert any(not item["superseded"] for item in items)
 
 
 # --- the sweep runs against the real fixture corpus too ---------------------------

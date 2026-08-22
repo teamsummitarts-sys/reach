@@ -26,6 +26,9 @@
         {% if service.manual_review_required %}<span class="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">NEEDS RESCREENING</span>{% endif %}
       </div>
       <p class="mt-1 text-xs text-faint">{{ service.canonical_domain }}{% if service.category != 'UNKNOWN' %} · {{ service.category.replace('_',' ') }}{% endif %}</p>
+      {% if service.screening_status == 'SCREENED' %}
+      <p class="mt-1 max-w-xl text-[11px] text-gray-400">{{ endorsement_disclaimer }}</p>
+      {% endif %}
       {% if override %}
       <p class="mt-1 text-[11px] text-gray-400">Set by manual override — {{ override.override_reason }}</p>
       {% endif %}
@@ -37,7 +40,8 @@
           {% if service.last_screened_at %}<span class="text-gray-300">{{ service.last_screened_at[:10] }}</span>{% else %}{{ ui.unknown() }}{% endif %}
         </span>
         <span class="flex items-center gap-1.5">Pricing
-          {% if service.pricing_min is none %}{{ ui.unknown() }}
+          {% if service.pricing_model == 'FREE_SUBMISSION' %}<span class="text-gray-300">Submissions are free — no submission fee</span>
+          {% elif service.pricing_min is none %}{{ ui.unknown() }}
           {% else %}<span class="text-gray-300">{{ '%g' % service.pricing_min }} {{ service.pricing_currency or '' }}{% if not pricing_current %} as of {{ (service.pricing_last_verified_at or '')[:10] }}{% endif %}</span>{% endif %}
         </span>
       </p>
@@ -80,9 +84,9 @@
     {% endif %}
   </div>
   <div class="mt-3">
-    <button type="button" data-post="{{ url_for('reach.promotion_open_external', service_id=service.id) }}"
-            data-reload="false"
-            class="inline-flex items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200">Open service</button>
+    <a href="{{ url_for('reach.promotion_open_external', service_id=service.id) }}"
+       target="_blank" rel="noopener noreferrer nofollow"
+       class="inline-flex items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200">Open service</a>
     <p class="mt-1 text-[10px] text-faint">{{ leaving_reach }} {{ leaving_reach_detail }}</p>
   </div>
 </section>
@@ -95,18 +99,35 @@
 
   <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
     {{ ui.section('What you do NOT get') }}
+    {#  Only a FALSE tri-state licenses the flat sentence. UNKNOWN means REACH
+        could not read the answer, and saying "not guaranteed" there would be
+        REACH making the service's promise on its behalf. #}
     <ul class="mt-2 space-y-1 text-xs text-gray-400">
-      {% if service.guaranteed_playlist_placement != 'TRUE' %}<li>Playlist placement is not guaranteed.</li>{% endif %}
-      {% if service.guaranteed_streams != 'TRUE' %}<li>Streaming volume is not guaranteed.</li>{% endif %}
+      {% if service.guaranteed_playlist_placement == 'FALSE' %}<li>Playlist placement is not guaranteed.</li>{% endif %}
+      {% if service.guaranteed_streams == 'FALSE' %}<li>Streaming volume is not guaranteed.</li>{% endif %}
+      {% if service.placement_discretionary == 'TRUE' %}<li>Placement stays with the curator — paying does not buy it.</li>{% endif %}
       {% if service.guaranteed_playlist_placement == 'TRUE' or service.guaranteed_streams == 'TRUE' %}
       <li class="text-red-400">This service claims guarantees REACH blocks. See the evidence below.</li>
+      {% endif %}
+      {% if service.guaranteed_playlist_placement == 'UNKNOWN' and service.guaranteed_streams == 'UNKNOWN' %}
+      <li class="flex flex-wrap items-center gap-1.5">REACH found no guarantee claims in the pages it could read
+        {{ ui.unknown() }}<span>— that is not a promise from the service.</span></li>
       {% endif %}
     </ul>
   </section>
 </div>
 
+{#  A four-way title: "REACH Screened" is a defined status and must never head
+    a list that denies it. The reasons shown are the ones that produced the
+    EFFECTIVE status — after an override, a later automated pass is reported
+    separately rather than standing in for the verdict in force. #}
+{% set verdict_title = {'BLOCKED': 'Why REACH blocked it',
+                        'SCREENED': 'Why REACH screened it',
+                        'CAUTION': 'Why REACH flagged it for caution',
+                        'UNKNOWN': 'What REACH could not establish'} %}
 <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
-  {{ ui.section('Why REACH blocked it' if service.screening_status == 'BLOCKED' else 'Why REACH screened it') }}
+  {{ ui.section(verdict_title.get(service.screening_status, 'What REACH could not establish'),
+                ('Set by manual override — ' ~ override.override_reason) if override else None) }}
   {% if reasons %}
   <ul class="mt-3 space-y-1">
     {% for reason in reasons %}
@@ -121,6 +142,19 @@
   {% if service.screening_status == 'UNKNOWN' %}
   <p class="mt-3 text-xs text-gray-400">{{ unknown_statement }}</p>
   {% endif %}
+
+  {% if automated_reasons %}
+  <details class="mt-3 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+    <summary class="cursor-pointer list-none text-[11px] font-semibold text-gray-400 [&::-webkit-details-marker]:hidden">
+      Last automated pass said {{ automated.status }}{% if automated.created_at %} on {{ automated.created_at[:10] }}{% endif %}
+    </summary>
+    <ul class="mt-2 space-y-1">
+      {% for reason in automated_reasons %}
+      <li class="text-xs text-gray-400">{{ '✓' if reason.sign == '+' else ('✕' if reason.sign == '-' else '·') }} {{ reason.text }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 </section>
 
 <section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
@@ -132,6 +166,8 @@
     {{ tristate('Anti-bot policy published', service.anti_bot_policy) }}
     {{ tristate('Curators vetted', service.curator_vetting) }}
     {{ tristate('Playlists vetted', service.playlist_vetting) }}
+    {{ tristate('Guaranteed followers claimed', service.guaranteed_followers) }}
+    {{ tristate('Guaranteed saves claimed', service.guaranteed_saves) }}
     {{ tristate('Curators paid per placement', service.curator_compensation) }}
     {{ tristate('Refund policy published', service.refund_policy) }}
   </div>
@@ -146,8 +182,17 @@
   {{ ui.section('Evidence', 'Every claim above, with the page and the passage it came from.') }}
   <div class="mt-3 space-y-2">
     {% for item in evidence_items %}
-    {{ ui.receipt(item.field.replace('_',' ') ~ ' — ' ~ (item.value | string)[:120],
-                  source_url=item.source_url, excerpt=item.excerpt, retrieved=item.retrieved_at) }}
+    <div class="{{ 'opacity-60' if item.superseded else '' }}">
+      {% if item.superseded or item.stale %}
+      <div class="mb-1 flex flex-wrap items-center gap-1.5">
+        {% if item.superseded %}<span class="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400"
+              title="A later read of the same page replaced this claim. Kept for the record; not used in screening.">SUPERSEDED</span>{% endif %}
+        {% if item.stale %}<span class="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">STALE</span>{% endif %}
+      </div>
+      {% endif %}
+      {{ ui.receipt(item.field.replace('_',' ') ~ ' — ' ~ (item.value | string)[:120],
+                    source_url=item.source_url, excerpt=item.excerpt, retrieved=item.retrieved_at) }}
+    </div>
     {% else %}
     {{ ui.empty('No evidence collected yet.') }}
     {% endfor %}

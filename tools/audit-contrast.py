@@ -130,8 +130,8 @@ def seed(db_path):
     promotion.set_campaign_promotion(campaign_id, True, budget_amount=500, budget_currency="USD")
     promotion.start_sweep()
     promotion.run_to_completion()
-    for url in ("https://curatorfee.example/", "https://curatorfee.example/pricing",
-                "https://curatorfee.example/terms", "https://presswire.example/",
+    for url in ("https://levelpath.example/", "https://levelpath.example/pricing",
+                "https://levelpath.example/terms", "https://presswire.example/",
                 "https://presswire.example/terms", "https://streamboost.example/",
                 "https://gatedpromo.example/", "https://gatedpromo.example/pricing"):
         jobs.enqueue("PROMO_FETCH", {"url": url}, idempotency_key=f"audit:promo:{url}")
@@ -139,9 +139,12 @@ def seed(db_path):
     promotion.compute_fits(campaign_id)
     screened = [s for s in promotion.services()
                 if s["screening_status"] == promotion.SCREENED]
-    if screened:
-        promotion.add_plan_item(campaign_id, service_id=screened[0]["id"],
-                                category="CURATOR_SUBMISSIONS", amount=12, currency="USD")
+    if not screened:
+        # An audit that only visits empty states measures the chrome and calls
+        # the product accessible. A missing screened card is a seeding bug.
+        raise SystemExit("promotion seeding produced no SCREENED service to audit")
+    promotion.add_plan_item(campaign_id, service_id=screened[0]["id"],
+                            category="CURATOR_SUBMISSIONS", amount=14, currency="USD")
 
     target = campaigns.targets(campaign_id)[0]
     return campaign_id, target["id"], recording["id"]
