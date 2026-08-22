@@ -637,6 +637,44 @@ MIGRATIONS = [
         updated_by TEXT
     );
     """,
+    # 9 — Peer Radar: watched artists, coverage events, sweep state
+    """
+    CREATE TABLE watched_artist (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        name TEXT NOT NULL COLLATE NOCASE,
+        source TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        UNIQUE (tenant_id, name)
+    );
+    CREATE TABLE coverage_event (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        watched_artist_id TEXT NOT NULL REFERENCES watched_artist(id),
+        outlet_id TEXT REFERENCES outlet(id),
+        url TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        title TEXT,
+        kind TEXT NOT NULL,
+        excerpt TEXT,
+        evidence_id TEXT REFERENCES evidence_packet(id),
+        retrieved_at TEXT NOT NULL,
+        dedup_key TEXT NOT NULL,
+        targeted_target_id TEXT REFERENCES campaign_target(id),
+        created_at TEXT NOT NULL,
+        UNIQUE (tenant_id, dedup_key)
+    );
+    CREATE INDEX idx_coverage_artist ON coverage_event(watched_artist_id, retrieved_at);
+    CREATE INDEX idx_coverage_domain ON coverage_event(tenant_id, domain);
+    CREATE TABLE radar_state (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenant(id),
+        last_sweep_started_at TEXT,
+        last_sweep_finished_at TEXT,
+        searches_used INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

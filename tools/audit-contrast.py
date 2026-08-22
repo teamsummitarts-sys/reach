@@ -81,7 +81,8 @@ def seed(db_path):
         "REACH_SENDER_DKIM_SELECTOR": "selector1", "REACH_SENDER_DOMAIN_VERIFIED": "1",
     })
     from reach import (analytics, approvals, campaigns, catalog, dns_checks, drafts,
-                       fetcher, humanactions, outcomes, pipeline, policy, profile, rbac)
+                       fetcher, humanactions, outcomes, pipeline, policy, profile,
+                       radar, rbac)
     from reach.providers import email as email_provider
 
     domain = "outreach.streetbanker.example"
@@ -118,6 +119,12 @@ def seed(db_path):
         outcomes.record_response(target_id, outcomes.ACCEPT)
         outcomes.record_placement(target_id, outcomes.EVIDENCE_URL,
                                   url="https://bassforge.example/promo")
+    # Radar, populated: fixture artists whose coverage the fixture corpus holds.
+    for name in ("Grey Pulse", "Cold Veil"):
+        radar.add_artist(name)
+    radar.start_sweep()
+    radar.run_to_completion()
+
     target = campaigns.targets(campaign_id)[0]
     return campaign_id, target["id"], recording["id"]
 
@@ -146,6 +153,7 @@ def main():
         "outreach": f"/reach/campaigns/{campaign_id}/outreach",
         "responses": f"/reach/campaigns/{campaign_id}/responses",
         "placements": f"/reach/campaigns/{campaign_id}/placements",
+        "radar": "/reach/radar",
         "needs-you": "/reach/needs-you", "providers": "/reach/providers",
         "relationships": "/reach/relationships", "settings": "/reach/settings",
     }

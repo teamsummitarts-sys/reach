@@ -386,3 +386,37 @@ PAGES["https://brokenupstream.example/playlists"] = _page(_html(
     "502",
     "<h1>502 Bad Gateway</h1><p>The upstream server is temporarily unavailable.</p>",
 ), status=502)
+
+# ---------------------------------------------------------------------------
+# 19. Peer Radar coverage: pages where outlets cover the fixture artists
+#     Grey Pulse and Cold Veil. One is unmistakably a premiere; the other is
+#     deliberately ambiguous, so the honest kind for it is UNKNOWN.
+# ---------------------------------------------------------------------------
+_site("echoline.example")
+PAGES["https://echoline.example/premiere-grey-pulse"] = _page(_html(
+    "Premiere: Grey Pulse — Static Bloom | Echo Line",
+    """
+    <h1>Premiere: Grey Pulse — &ldquo;Static Bloom&rdquo;</h1>
+    <p>Today Echo Line premieres &ldquo;Static Bloom&rdquo;, the new single from
+    Berlin duo Grey Pulse. Dark electronic textures over a coldwave pulse — the
+    duo's sharpest work yet.</p>
+    <p>Pitches to the editors: <a href="mailto:editorial@echoline.example">editorial@echoline.example</a></p>
+    <time datetime="2026-08-15">Published 15 August 2026</time>
+    """,
+    description="Echo Line premieres Grey Pulse's new single Static Bloom.",
+))
+
+_site("wavesignal.example")
+PAGES["https://wavesignal.example/notes/cold-veil-live"] = _page(_html(
+    "Cold Veil at Fault Lines festival | Wave Signal",
+    """
+    <h1>Cold Veil at Fault Lines</h1>
+    <p>Notes from the Fault Lines festival floor: Cold Veil closed the second
+    stage with forty minutes of strobe-lit EBM, and the tent was over capacity
+    twenty minutes in.</p>
+    <p>Wave Signal covers electronic music culture. Editor:
+    <a href="mailto:desk@wavesignal.example">desk@wavesignal.example</a></p>
+    <time datetime="2026-08-16">16 August 2026</time>
+    """,
+    description="Wave Signal on Cold Veil's Fault Lines festival set.",
+))

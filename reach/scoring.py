@@ -14,18 +14,21 @@ from .errors import ValidationError
 REACH_SCORE_VERSION = "reach-score/1.0.0"
 RISK_SCORE_VERSION = "risk-score/1.0.0"
 
-# component -> weight. They sum to 1.0.
+# component -> weight. They sum to 1.0. peer_coverage is deliberately modest:
+# an outlet covering a comparable artist is a genuine relevance signal, but it
+# must not outrank the direct fit and verification signals.
 COMPONENT_WEIGHTS = {
-    "genre_fit": 0.16,
-    "microgenre_fit": 0.14,
-    "context_fit": 0.08,
+    "genre_fit": 0.15,
+    "microgenre_fit": 0.13,
+    "context_fit": 0.07,
     "territory_fit": 0.07,
     "audience_fit": 0.05,
     "opportunity_activity": 0.10,
     "credibility": 0.08,
-    "submission_availability": 0.12,
-    "contact_verification": 0.10,
+    "submission_availability": 0.11,
+    "contact_verification": 0.09,
     "relationship_history": 0.06,
+    "peer_coverage": 0.05,
     "cost_efficiency": 0.02,
     "freshness": 0.02,
 }
@@ -41,6 +44,7 @@ COMPONENT_LABELS = {
     "submission_availability": "Explicit submission route",
     "contact_verification": "Contact verification",
     "relationship_history": "Relationship history",
+    "peer_coverage": "Covers comparable artists",
     "cost_efficiency": "Cost efficiency",
     "freshness": "Source freshness",
 }
@@ -92,6 +96,7 @@ def score_opportunity(outlet, profile_values, campaign, contact_state=None,
     components["submission_availability"] = _submission_availability(outlet)
     components["contact_verification"] = _contact_verification(contact_state)
     components["relationship_history"] = _relationship(relationship)
+    components["peer_coverage"] = _peer_coverage(outlet)
     components["cost_efficiency"] = _cost_efficiency(outlet)
     components["freshness"] = _freshness(freshness_days)
 
@@ -132,6 +137,7 @@ def _positive_reason(key, value, outlet):
         "submission_availability": "Explicit submission route published",
         "contact_verification": "Contact independently verified",
         "relationship_history": "Previously accepted related music",
+        "peer_coverage": "Covered a comparable artist you watch",
         "cost_efficiency": "Free submission",
         "freshness": "Source checked recently",
     }[key]
@@ -149,6 +155,7 @@ def _negative_reason(key, value, outlet):
         "submission_availability": "No published submission route",
         "contact_verification": "Contact not independently verified",
         "relationship_history": "No prior relationship",
+        "peer_coverage": "No recorded coverage of watched artists",
         "cost_efficiency": "Paid consideration required",
         "freshness": "Source has not been re-checked",
     }[key]
@@ -222,6 +229,22 @@ def _contact_verification(contact_state):
     if contact_state.get("category") in ("UNVERIFIED_PUBLIC_BUSINESS",):
         return 0.4
     return 0.1
+
+
+def _peer_coverage(outlet):
+    """1.0 when a coverage event of a watched artist exists for this outlet.
+
+    Absence of coverage is UNKNOWN, never zero: Radar only sweeps what it was
+    told to watch, so "no event recorded" is not "does not cover this lane".
+    """
+    row = db.query_one(
+        "SELECT ce.id FROM coverage_event ce "
+        "JOIN watched_artist w ON w.id = ce.watched_artist_id "
+        "WHERE ce.outlet_id = ? OR (ce.domain IS NOT NULL AND ce.domain = ?) "
+        "LIMIT 1",
+        (outlet["id"], outlet["domain"]),
+    )
+    return 1.0 if row else None
 
 
 def _relationship(relationship):
