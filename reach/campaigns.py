@@ -89,7 +89,9 @@ CHANNELS = ["PLAYLIST", "RADIO", "BLOG", "PUBLICATION", "DJ", "DJ_POOL", "PODCAS
 
 def create(recording_id, name=None, mode=SCOUT, territories=None, channels=None,
            languages=None, start_date=None, end_date=None, search_budget=None,
-           domain_budget=None, daily_send_limit=None, priorities=None):
+           domain_budget=None, daily_send_limit=None, priorities=None,
+           paid_promotion_enabled=False, promotion_budget_amount=None,
+           promotion_budget_currency=None):
     """A campaign cannot exist without a rights attestation and a complete-enough
     track profile. Both are checked here rather than at send time."""
     principal = rbac.require("campaign.create")
@@ -140,6 +142,12 @@ def create(recording_id, name=None, mode=SCOUT, territories=None, channels=None,
         "daily_send_limit": daily_send_limit or config.DEFAULT_DAILY_SEND_LIMIT,
         "priorities_json": json.dumps(priorities or []),
         "created_by": principal.id,
+        # Paid promotion is opt-in per campaign and off by default. A budget
+        # nobody entered stays NULL — UNKNOWN, never zero.
+        "paid_promotion_enabled": 1 if paid_promotion_enabled else 0,
+        "promotion_budget_amount": promotion_budget_amount,
+        "promotion_budget_currency": promotion_budget_currency,
+        "promotion_allocations_json": None,
         "created_at": now,
         "updated_at": now,
     })

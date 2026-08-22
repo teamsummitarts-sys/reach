@@ -713,6 +713,124 @@ MIGRATIONS = [
     CREATE INDEX idx_coverage_domain ON coverage_event(tenant_id, domain);
     ALTER TABLE radar_state ADD COLUMN trend_searches_used INTEGER NOT NULL DEFAULT 0;
     """,
+    # 11 — Paid Promotion: screened services, screening history, campaign fit, plan
+    """
+    CREATE TABLE promotion_service (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        name TEXT NOT NULL,
+        canonical_domain TEXT NOT NULL,
+        url TEXT,
+        company_name TEXT,
+        category TEXT NOT NULL DEFAULT 'UNKNOWN',
+        service_types_json TEXT,
+        supported_channels_json TEXT,
+        supported_genres_json TEXT,
+        supported_territories_json TEXT,
+        pricing_model TEXT NOT NULL DEFAULT 'UNKNOWN',
+        pricing_min REAL,
+        pricing_max REAL,
+        pricing_currency TEXT,
+        pricing_last_verified_at TEXT,
+        business_model_summary TEXT,
+        -- Tri-state facts: 'TRUE' / 'FALSE' / 'UNKNOWN'. There is no
+        -- boolean-with-unknown type here, and UNKNOWN is never false.
+        placement_discretionary TEXT NOT NULL DEFAULT 'UNKNOWN',
+        guaranteed_feedback TEXT NOT NULL DEFAULT 'UNKNOWN',
+        guaranteed_coverage TEXT NOT NULL DEFAULT 'UNKNOWN',
+        guaranteed_playlist_placement TEXT NOT NULL DEFAULT 'UNKNOWN',
+        guaranteed_streams TEXT NOT NULL DEFAULT 'UNKNOWN',
+        guaranteed_followers TEXT NOT NULL DEFAULT 'UNKNOWN',
+        guaranteed_saves TEXT NOT NULL DEFAULT 'UNKNOWN',
+        anti_bot_policy TEXT NOT NULL DEFAULT 'UNKNOWN',
+        curator_vetting TEXT NOT NULL DEFAULT 'UNKNOWN',
+        playlist_vetting TEXT NOT NULL DEFAULT 'UNKNOWN',
+        curator_compensation TEXT NOT NULL DEFAULT 'UNKNOWN',
+        refund_policy TEXT NOT NULL DEFAULT 'UNKNOWN',
+        terms_url TEXT,
+        privacy_url TEXT,
+        pricing_url TEXT,
+        submission_url TEXT,
+        contact_url TEXT,
+        screening_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+        block_reason TEXT,
+        last_screened_at TEXT,
+        next_review_at TEXT,
+        manual_review_required INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        commercial_relationship_type TEXT NOT NULL DEFAULT 'NONE',
+        commercial_disclosure TEXT,
+        canonical_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (tenant_id, canonical_domain)
+    );
+    CREATE INDEX idx_promo_domain ON promotion_service(tenant_id, canonical_domain);
+    CREATE INDEX idx_promo_status ON promotion_service(tenant_id, screening_status);
+    CREATE TABLE screening_result (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        service_id TEXT NOT NULL REFERENCES promotion_service(id),
+        status TEXT NOT NULL,
+        score INTEGER,
+        components_json TEXT,
+        signals_json TEXT,
+        reasons_json TEXT,
+        block_reason TEXT,
+        human_override INTEGER NOT NULL DEFAULT 0,
+        override_reason TEXT,
+        version TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_screening_service ON screening_result(service_id, created_at);
+    CREATE TABLE service_fit_score (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        service_id TEXT NOT NULL REFERENCES promotion_service(id),
+        campaign_id TEXT NOT NULL REFERENCES campaign(id),
+        score INTEGER,
+        components_json TEXT,
+        reasons_json TEXT,
+        version TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_fit_campaign ON service_fit_score(campaign_id, service_id, created_at);
+    CREATE TABLE promotion_plan_item (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        campaign_id TEXT NOT NULL REFERENCES campaign(id),
+        service_id TEXT REFERENCES promotion_service(id),
+        label TEXT NOT NULL,
+        allocation_category TEXT NOT NULL DEFAULT 'OTHER',
+        amount REAL,
+        currency TEXT,
+        status TEXT NOT NULL DEFAULT 'PLANNED',
+        paid_at TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_plan_campaign ON promotion_plan_item(campaign_id, created_at);
+    CREATE TABLE promotion_dismissal (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenant(id),
+        campaign_id TEXT NOT NULL REFERENCES campaign(id),
+        service_id TEXT NOT NULL REFERENCES promotion_service(id),
+        created_at TEXT NOT NULL,
+        UNIQUE (campaign_id, service_id)
+    );
+    CREATE TABLE promotion_state (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenant(id),
+        last_sweep_started_at TEXT,
+        last_sweep_finished_at TEXT,
+        searches_used INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    );
+    ALTER TABLE campaign ADD COLUMN paid_promotion_enabled INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE campaign ADD COLUMN promotion_budget_amount REAL;
+    ALTER TABLE campaign ADD COLUMN promotion_budget_currency TEXT;
+    ALTER TABLE campaign ADD COLUMN promotion_allocations_json TEXT;
+    """,
 ]
 
 

@@ -1,0 +1,372 @@
+{% extends "reach/_layout.html" %}
+{% import "reach/_layout.html" as ui with context %}
+
+{% block title %}REACH — Paid promotion — {{ campaign.name }}{% endblock %}
+
+{% macro money(amount, currency) %}
+{% if amount is none %}{{ ui.unknown() }}{% else %}{{ '%g' % amount }} {{ currency or '' }}{% endif %}
+{% endmacro %}
+
+{#  Leaving REACH is its own moment: the destination is a third party REACH
+    screened but does not control. Secondary styling on purpose — this is a
+    research tool, not a storefront. #}
+{% macro open_service(service, leaving, detail, demoted=False) %}
+<div class="{{ 'mt-2' if demoted else '' }}">
+  <a href="{{ url_for('reach.promotion_open_external', service_id=service.id) }}"
+     target="_blank" rel="noopener noreferrer nofollow"
+     class="inline-flex shrink-0 items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200">Open service</a>
+  <p class="mt-1 text-[10px] text-faint">{{ leaving }} {{ detail }}</p>
+</div>
+{% endmacro %}
+
+{% block reach_content %}
+
+<section>
+  <h1 class="text-2xl font-semibold tracking-tight">Screened paid promotion options for this release.</h1>
+  <p class="mt-1 text-sm text-gray-400">
+    Research and planning only. REACH never buys anything, never submits on your behalf, and
+    hands every purchase to you with the evidence it collected.
+  </p>
+</section>
+
+{% if not enabled %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Include paid promotion opportunities') }}
+  <p class="mt-3 text-sm text-gray-400">
+    REACH can research legitimate paid submission, promotion and advertising services relevant
+    to this release. REACH blocks services where it finds evidence of guaranteed streams or
+    guaranteed playlist placement — and services it cannot collect enough evidence about stay
+    UNKNOWN, which never means safe.
+  </p>
+  <p class="mt-3 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2 text-xs text-gray-300">
+    {{ category_promise }}
+  </p>
+
+  <form id="enable-promotion" class="mt-4 space-y-3">
+    <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
+      <input id="promo-enabled" type="checkbox" class="h-4 w-4 rounded border-white/20 bg-[#171719]">
+      Include paid promotion opportunities
+    </label>
+    <div class="flex flex-wrap items-end gap-3">
+      <label class="block">
+        <span class="text-xs font-semibold text-gray-300">Promotion budget (optional)</span>
+        <input id="promo-budget" type="number" step="0.01" placeholder="Leave blank for UNKNOWN"
+               class="mt-1 w-52 rounded-md border border-white/10 bg-[#090909] px-2.5 py-1.5 text-sm text-gray-100 placeholder:text-faint">
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold text-gray-300">Currency</span>
+        <input id="promo-currency" maxlength="3" placeholder="USD"
+               class="mt-1 w-24 rounded-md border border-white/10 bg-[#090909] px-2.5 py-1.5 text-sm text-gray-100 placeholder:text-faint">
+      </label>
+      <button type="submit"
+              class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20">Save</button>
+    </div>
+    <p class="text-[11px] text-faint">A budget you leave blank stays UNKNOWN — REACH will not invent one.</p>
+  </form>
+</section>
+
+{% else %}
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      {{ ui.section('Research sweep', 'Runs through the same search provider, fetcher, robots and platform filters as discovery.') }}
+      <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
+        <span class="flex items-center gap-1.5">Last swept
+          {% if promo_state.last_sweep_finished_at %}
+          <span class="text-gray-100">{{ promo_state.last_sweep_finished_at[:10] }}</span>
+          {% else %}{{ ui.unknown() }}{% endif %}
+        </span>
+        <span id="promo-searches" class="tabular-nums">Searches used: {{ promo_state.searches_used }} of {{ search_cap }} per sweep</span>
+        <span>Re-swept after {{ sweep_stale_days }} days</span>
+      </div>
+      {% if queries_not_run %}
+      <p id="promo-cap-note" class="mt-2 text-xs text-amber-400">
+        {{ queries_not_run }} of {{ queries_not_run + promo_state.searches_used }} planned queries were not run — the sweep hit its search cap.
+      </p>
+      {% endif %}
+    </div>
+    <button type="button" id="promo-sweep"
+            class="rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/25">
+      Find Paid Promotion
+    </button>
+  </div>
+
+  <details class="mt-4 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+    <summary class="cursor-pointer list-none text-xs font-semibold text-gray-300 [&::-webkit-details-marker]:hidden">What does REACH Screened mean?</summary>
+    <p class="mt-2 text-xs text-gray-400">{{ endorsement_disclaimer }}</p>
+    <p class="mt-2 text-xs text-gray-400">{{ category_promise }}</p>
+  </details>
+
+  <p id="promo-sweep-note" class="mt-3 {{ '' if sweep_pending else 'hidden' }} text-xs text-amber-300">
+    A sweep is in progress — this page drains it in short chunks and updates when it finishes.
+  </p>
+</section>
+
+<nav aria-label="Filter" class="flex flex-wrap gap-1.5">
+  {% for key, label in [('all','All'), ('best-fit','Best fit'), ('screened','REACH Screened'), ('caution','Caution'), ('unknown','Unknown'), ('blocked','Blocked')] %}
+  <a href="{{ url_for('reach.promotion_view', campaign_id=campaign.id, view=key) }}" {% if view == key %}aria-current="page"{% endif %}
+     class="rounded-full border px-3 py-1 text-xs font-semibold transition-colors {{ 'border-amber-500/40 bg-amber-500/10 text-amber-400' if view == key else 'border-white/10 text-gray-400 hover:border-white/20 hover:text-gray-200' }}">
+    {{ label }}
+  </a>
+  {% endfor %}
+</nav>
+
+<form method="get" action="{{ url_for('reach.promotion_view', campaign_id=campaign.id) }}"
+      class="flex flex-wrap items-end gap-2 rounded-xl border border-white/[0.08] bg-[#111113] p-3">
+  <input type="hidden" name="view" value="{{ view }}">
+  <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Type</span>
+    <input name="type" value="{{ filters.type or '' }}" placeholder="CURATOR_SUBMISSIONS"
+           class="mt-1 w-44 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100 placeholder:text-faint"></label>
+  <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Genre</span>
+    <input name="genre" value="{{ filters.genre or '' }}"
+           class="mt-1 w-32 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100"></label>
+  <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Territory</span>
+    <input name="territory" value="{{ filters.territory or '' }}"
+           class="mt-1 w-24 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100"></label>
+  <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Channel</span>
+    <input name="channel" value="{{ filters.channel or '' }}"
+           class="mt-1 w-28 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100"></label>
+  <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Max price</span>
+    <input name="price_max" type="number" step="0.01" value="{{ filters.price_max if filters.price_max is not none else '' }}"
+           class="mt-1 w-28 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100"></label>
+  <button type="submit" class="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-white/5">Filter</button>
+</form>
+
+<section class="space-y-3">
+  {% for item in items %}
+  {% set service = item.service %}
+  <div class="rounded-xl border {{ 'border-red-500/20' if item.status == 'BLOCKED' else 'border-white/[0.08]' }} bg-[#111113] p-4">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <a href="{{ url_for('reach.promotion_service', service_id=service.id, campaign_id=campaign.id) }}"
+             class="text-sm font-semibold text-gray-100 hover:text-white">{{ service.name }}</a>
+          {{ ui.screening_badge(item.status) }}
+          {% if item.stale %}<span class="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">SCREENING OUT OF DATE</span>{% endif %}
+          {% if item.needs_rescreen %}<span class="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">NEEDS RESCREENING</span>{% endif %}
+        </div>
+        <div class="mt-0.5 text-[11px] text-faint">{{ service.canonical_domain }}</div>
+        {% if item.override %}
+        <p class="mt-1 text-[11px] text-gray-400">Set by manual override — {{ item.override.override_reason }}</p>
+        {% endif %}
+        {% if service.commercial_relationship_type != 'NONE' %}
+        <p class="mt-1 text-[11px] text-amber-400">Commercial relationship: {{ service.commercial_relationship_type }} — {{ service.commercial_disclosure or 'UNKNOWN' }}</p>
+        {% endif %}
+      </div>
+      <div class="shrink-0 text-right">
+        {% if item.status != 'BLOCKED' %}
+        {{ ui.score_breakdown(item.fit_score, item.fit_components, {'genre_overlap':'Genre overlap','territory_overlap':'Territory overlap','language_match':'Language match','channel_match':'Channel match','goal_match':'Goal match','budget_fit':'Budget fit'}) }}
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+      {% for service_type in item.service_types %}
+      <span class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{{ service_type.replace('_',' ') }}</span>
+      {% endfor %}
+      <span class="ml-auto text-xs text-gray-400">
+        {% if service.pricing_model == 'FREE_SUBMISSION' %}Submissions are free
+        {% elif service.pricing_min is none %}Pricing {{ ui.unknown() }}
+        {% elif item.pricing_current %}From {{ money(service.pricing_min, service.pricing_currency) }}
+        {% else %}From {{ money(service.pricing_min, service.pricing_currency) }} as of {{ (service.pricing_last_verified_at or '')[:10] }}
+        {% endif %}
+      </span>
+    </div>
+
+    {% if item.status == 'BLOCKED' %}
+    <p class="mt-2 text-xs font-semibold text-red-400">{{ blocked_statement }}</p>
+    <p class="mt-1 text-xs text-gray-400">{{ service.block_reason }}</p>
+    <p class="mt-1 text-[11px] text-gray-400">{{ blocked_support }}</p>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <a href="{{ url_for('reach.promotion_service', service_id=service.id, campaign_id=campaign.id) }}"
+         class="inline-flex items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5">View evidence</a>
+    </div>
+    {{ open_service(service, leaving_reach, leaving_reach_detail, demoted=True) }}
+    {% else %}
+    {% if item.reasons %}
+    <ul class="mt-2 space-y-0.5">
+      {% for reason in item.reasons[:3] %}
+      <li class="text-[11px] text-gray-400">{{ '✓' if reason.sign == '+' else '·' }} {{ reason.text }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if item.status == 'UNKNOWN' %}<p class="mt-1 text-[11px] text-gray-400">{{ unknown_statement }}</p>{% endif %}
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <a href="{{ url_for('reach.promotion_service', service_id=service.id, campaign_id=campaign.id) }}"
+         class="inline-flex items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5">View evidence</a>
+      {% if item.in_plan %}
+      <span class="text-[11px] font-semibold text-emerald-400">In your plan</span>
+      {% else %}
+      <button type="button" data-post="{{ url_for('reach.promotion_add_plan', service_id=service.id) }}"
+              data-payload='{"campaign_id": "{{ campaign.id }}", "category": "{{ item.service_types[0] if item.service_types else 'OTHER' }}", "amount": "{{ service.pricing_min if service.pricing_min is not none else '' }}"}'
+              data-success="Added to your promotion plan"
+              class="inline-flex items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/20">Add to plan</button>
+      {% endif %}
+      <button type="button" data-post="{{ url_for('reach.promotion_dismiss', service_id=service.id) }}"
+              data-payload='{"campaign_id": "{{ campaign.id }}"}' data-success="Dismissed for this release"
+              class="inline-flex items-center rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-white/5">Not for this release</button>
+      {{ open_service(service, leaving_reach, leaving_reach_detail) }}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  {{ ui.empty('No paid promotion options researched yet. REACH can search for legitimate paid curator, press, radio, creator, and advertising opportunities relevant to this release.') }}
+  {% endfor %}
+</section>
+
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Promotion plan', 'What you intend to spend and what you already have. REACH records; it never pays.') }}
+  <div class="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+    {{ ui.metric('UNKNOWN' if totals.budget is none else '%g' % totals.budget, 'Budget') }}
+    {{ ui.metric('%g' % totals.planned, 'Planned') }}
+    {{ ui.metric('%g' % totals.spent, 'Spent') }}
+    {{ ui.metric('UNKNOWN' if totals.remaining is none else '%g' % totals.remaining, 'Remaining') }}
+  </div>
+  {% if totals.unknown_amounts %}
+  <p class="mt-2 text-[11px] text-faint">{{ totals.unknown_amounts }} item(s) have no amount entered — they are listed as UNKNOWN and join no total.</p>
+  {% endif %}
+
+  {% if plan %}
+  <div class="mt-4 space-y-2">
+    {% for item in plan %}
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2">
+      <span class="text-xs font-semibold text-gray-100">{{ item.label }}</span>
+      <span class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{{ item.allocation_category.replace('_',' ') }}</span>
+      <span class="text-xs text-amber-400">{% if item.amount is none %}{{ ui.unknown() }}{% else %}{{ '%g' % item.amount }} {{ item.currency or '' }}{% endif %}</span>
+      {{ ui.status_badge(item.status) }}
+      <span class="ml-auto flex flex-wrap items-center gap-1">
+        {% for status in plan_statuses %}
+        {% if status != item.status %}
+        <button type="button" data-post="{{ url_for('reach.promotion_plan_status', item_id=item.id) }}"
+                data-payload='{"status": "{{ status }}"}' data-success="Updated"
+                class="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 hover:bg-white/5">{{ status.replace('_',' ') }}</button>
+        {% endif %}
+        {% endfor %}
+        <button type="button" data-post="{{ url_for('reach.promotion_plan_delete', item_id=item.id) }}"
+                data-success="Removed"
+                class="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 hover:border-red-500/30 hover:text-red-400">Remove</button>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="mt-3">{{ ui.empty('Nothing planned yet. Add a screened service, or a line of your own below.') }}</div>
+  {% endif %}
+
+  <form id="add-plan-item" class="mt-4 flex flex-wrap items-end gap-2">
+    <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Label</span>
+      <input name="label" required placeholder="Meta Ads"
+             class="mt-1 w-44 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100 placeholder:text-faint"></label>
+    <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Category</span>
+      <select name="category" class="mt-1 w-44 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100">
+        {% for category in allocation_categories %}<option value="{{ category }}">{{ category.replace('_',' ') }}</option>{% endfor %}
+      </select></label>
+    <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Amount</span>
+      <input name="amount" type="number" step="0.01" placeholder="blank = UNKNOWN"
+             class="mt-1 w-32 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100 placeholder:text-faint"></label>
+    <button type="submit" class="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-white/5">Add line</button>
+  </form>
+</section>
+
+{% if allocation %}
+<section class="rounded-xl border border-white/[0.08] bg-[#111113] p-5">
+  {{ ui.section('Suggested allocation') }}
+  <div class="mt-3 flex flex-wrap gap-2">
+    {% for entry in allocation.categories %}
+    <span class="rounded-lg border border-white/[0.08] bg-[#171719] px-3 py-1.5 text-xs">
+      <span class="font-semibold text-gray-100">{{ entry.category.replace('_',' ') }}</span>
+      <span class="ml-2 text-amber-400">{{ '%g' % entry.amount }} {{ allocation.currency or '' }}</span>
+    </span>
+    {% endfor %}
+  </div>
+  <p class="mt-2 text-[11px] text-faint">{{ allocation.basis }}{% if allocation.caveat %} {{ allocation.caveat }}{% endif %}</p>
+</section>
+{% endif %}
+
+<script>
+  const CAMPAIGN_ID = '{{ campaign.id }}';
+
+  const planForm = document.getElementById('add-plan-item');
+  if (planForm) {
+    planForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const data = await reachPost('{{ url_for("reach.promotion_add_free_item", campaign_id=campaign.id) }}', {
+        label: form.elements.label.value,
+        category: form.elements.category.value,
+        amount: form.elements.amount.value,
+      });
+      if (data.ok) { reachToast('Added to your plan', true); setTimeout(() => window.location.reload(), 600); }
+    });
+  }
+
+  // The sweep drains in ~20-second chunks, exactly like discovery: no request
+  // can die at the server's timeout, and an interrupted sweep resumes on load.
+  const sweepButton = document.getElementById('promo-sweep');
+  const sweepNote = document.getElementById('promo-sweep-note');
+  const searchesLabel = document.getElementById('promo-searches');
+  const SWEEP_URL = '{{ url_for("reach.promotion_sweep", campaign_id=campaign.id) }}';
+  let sweeping = false;
+
+  async function drivePromotionSweep() {
+    if (sweeping || !sweepButton) return;
+    sweeping = true;
+    sweepButton.disabled = true;
+    sweepButton.textContent = 'Researching…';
+    sweepNote.classList.remove('hidden');
+    let idleRounds = 0;
+    try {
+      for (;;) {
+        const data = await reachPost(SWEEP_URL);
+        if (!data.ok) break;
+        if (data.state) {
+          searchesLabel.textContent = `Searches used: ${data.state.searches_used} of {{ search_cap }} per sweep`;
+        }
+        if (!data.pending) {
+          // A sweep that ran out of budget did not finish the work, and must
+          // not say it did.
+          reachToast(data.queries_not_run
+            ? `Sweep stopped at its search cap — ${data.queries_not_run} planned queries were not run`
+            : 'Research complete', true);
+          setTimeout(() => window.location.reload(), 700);
+          return;
+        }
+        idleRounds = data.jobs_processed === 0 ? idleRounds + 1 : 0;
+        if (idleRounds >= 2) {
+          reachToast('A job is waiting to retry — it resumes on its own. Check back shortly.', true);
+          return;
+        }
+      }
+    } catch (error) {
+      reachToast('Connection dropped — tap Find Paid Promotion to resume. Nothing is lost.', false);
+    } finally {
+      sweeping = false;
+      sweepButton.disabled = false;
+      sweepButton.textContent = 'Find Paid Promotion';
+      sweepNote.classList.add('hidden');
+    }
+  }
+
+  if (sweepButton) { sweepButton.addEventListener('click', drivePromotionSweep); }
+  {% if sweep_pending %}
+  drivePromotionSweep();
+  {% endif %}
+</script>
+{% endif %}
+
+<script>
+  const enableForm = document.getElementById('enable-promotion');
+  if (enableForm) {
+    enableForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = await reachPost('{{ url_for("reach.promotion_enable", campaign_id=campaign.id) }}', {
+        enabled: document.getElementById('promo-enabled').checked ? '1' : '0',
+        budget_amount: document.getElementById('promo-budget').value,
+        budget_currency: document.getElementById('promo-currency').value,
+      });
+      if (data.ok) { reachToast('Saved', true); setTimeout(() => window.location.reload(), 600); }
+    });
+  }
+</script>
+{% endblock %}

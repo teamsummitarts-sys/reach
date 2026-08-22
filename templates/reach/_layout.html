@@ -19,6 +19,22 @@
       title="Not measured. REACH shows the gap rather than inventing a number.">UNKNOWN</span>
 {% endmacro %}
 
+{#  Screening state for a paid promotion service. Never the word VERIFIED:
+    REACH reviewed public evidence, which is a different claim. UNKNOWN routes
+    through the UNKNOWN badge, because "not established" is not "fine". #}
+{% macro screening_badge(status) %}
+{% if status == 'SCREENED' %}
+<span class="inline-flex shrink-0 items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400"
+      title="REACH reviewed currently available public evidence about this service's business model and promotion practices. REACH Screened does not mean the service is endorsed by Spotify, Apple Music, Amazon Music, or another DSP.">REACH SCREENED</span>
+{% elif status == 'CAUTION' %}
+<span class="inline-flex shrink-0 items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">CAUTION</span>
+{% elif status == 'BLOCKED' %}
+<span class="inline-flex shrink-0 items-center rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">BLOCKED</span>
+{% else %}
+{{ unknown() }}
+{% endif %}
+{% endmacro %}
+
 {% macro mode_badge(mode) %}
 {% set ui = {
   'COPILOT':   'border-amber-500/30 bg-amber-500/10 text-amber-400',
@@ -401,6 +417,12 @@
        class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold {{ 'bg-white/5 text-white' if active == 'placements' else 'text-faint hover:text-gray-300' }}">Placements</a>
     <a href="{{ url_for('reach.needs_you', campaign_id=campaign_id) }}"
        class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-faint hover:text-gray-300">Needs You</a>
+    {#  Always rendered, enabled or not: a campaign created before the feature
+        existed still needs a way in. Off reads as "Set up", not as absent. #}
+    <a href="{{ url_for('reach.promotion_view', campaign_id=campaign_id) }}"
+       class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold {{ 'bg-white/5 text-white' if active == 'promotion' else ('text-faint hover:text-gray-300' if paid_promotion_enabled else 'text-faint hover:text-gray-300') }}">
+      Paid promotion{% if not paid_promotion_enabled %} <span class="text-faint">· Set up</span>{% endif %}
+    </a>
   </nav>
   {% endif %}
 

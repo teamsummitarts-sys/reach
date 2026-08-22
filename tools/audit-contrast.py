@@ -81,8 +81,8 @@ def seed(db_path):
         "REACH_SENDER_DKIM_SELECTOR": "selector1", "REACH_SENDER_DOMAIN_VERIFIED": "1",
     })
     from reach import (analytics, approvals, campaigns, catalog, dns_checks, drafts,
-                       fetcher, humanactions, outcomes, pipeline, policy, profile,
-                       radar, rbac)
+                       fetcher, humanactions, jobs, outcomes, pipeline, policy, profile,
+                       promotion, radar, rbac)
     from reach.providers import email as email_provider
 
     domain = "outreach.streetbanker.example"
@@ -125,6 +125,27 @@ def seed(db_path):
     radar.start_sweep()
     radar.run_to_completion()
 
+    # Paid promotion, populated across every screening state so the audit
+    # measures real cards rather than an empty shell.
+    promotion.set_campaign_promotion(campaign_id, True, budget_amount=500, budget_currency="USD")
+    promotion.start_sweep()
+    promotion.run_to_completion()
+    for url in ("https://levelpath.example/", "https://levelpath.example/pricing",
+                "https://levelpath.example/terms", "https://presswire.example/",
+                "https://presswire.example/terms", "https://streamboost.example/",
+                "https://gatedpromo.example/", "https://gatedpromo.example/pricing"):
+        jobs.enqueue("PROMO_FETCH", {"url": url}, idempotency_key=f"audit:promo:{url}")
+    promotion.run_to_completion()
+    promotion.compute_fits(campaign_id)
+    screened = [s for s in promotion.services()
+                if s["screening_status"] == promotion.SCREENED]
+    if not screened:
+        # An audit that only visits empty states measures the chrome and calls
+        # the product accessible. A missing screened card is a seeding bug.
+        raise SystemExit("promotion seeding produced no SCREENED service to audit")
+    promotion.add_plan_item(campaign_id, service_id=screened[0]["id"],
+                            category="CURATOR_SUBMISSIONS", amount=14, currency="USD")
+
     target = campaigns.targets(campaign_id)[0]
     return campaign_id, target["id"], recording["id"]
 
@@ -154,6 +175,8 @@ def main():
         "responses": f"/reach/campaigns/{campaign_id}/responses",
         "placements": f"/reach/campaigns/{campaign_id}/placements",
         "radar": "/reach/radar",
+        "promotion": f"/reach/campaigns/{campaign_id}/promotion",
+        "promotion-screening": "/reach/promotion/screening",
         "needs-you": "/reach/needs-you", "providers": "/reach/providers",
         "relationships": "/reach/relationships", "settings": "/reach/settings",
     }
