@@ -426,6 +426,125 @@ PAGES["https://wavesignal.example/notes/cold-veil-live"] = _page(_html(
 #     platform itself stays excluded; the public web writing about it is the
 #     in-scope trend source.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 21. Paid promotion services. The legitimate consideration model, disclosed
+#     paid media, a login-walled unknown, and a denial page plus a third-party
+#     listicle — neither of which may produce a block or an entity.
+# ---------------------------------------------------------------------------
+# The legitimate consideration model, complete enough to reach REACH SCREENED:
+# a fee buys a guaranteed listen and a written reply, and the curator still
+# decides. It lives on its own domain rather than as extra curatorfee.example
+# pages so that discovery's existing expectations for that domain are untouched.
+_site("levelpath.example")
+PAGES["https://levelpath.example/"] = _page(_html(
+    "Level Path — Curated Reviews",
+    """
+    <h1>Level Path</h1>
+    <p>We review every submission and reply with written feedback. There is a submission
+    fee of $14 per track, which pays our reviewer for the time it takes.</p>
+    <p>A fee buys a guaranteed listen and a written reply — it does not buy placement.</p>
+    <p><a href="/pricing">Pricing</a> · <a href="/terms">Terms</a></p>
+    <time datetime="2026-08-19">Updated 19 August 2026</time>
+    """,
+    description="Level Path: paid written review, placement never guaranteed.",
+))
+PAGES["https://levelpath.example/pricing"] = _page(_html(
+    "Pricing | Level Path",
+    """
+    <h1>Pricing</h1>
+    <p>Our pricing is simple: a submission fee of $14 per track. That fee pays the
+    reviewer for the time it takes to listen properly and write back.</p>
+    <p>We offer no packages, no bundles and no bulk discounts.</p>
+    <p><a href="/terms">Read our terms</a> · <a href="/">Home</a></p>
+    <time datetime="2026-08-19">Updated 19 August 2026</time>
+    """,
+    description="Level Path pricing: submission fee per track for written review.",
+))
+PAGES["https://levelpath.example/terms"] = _page(_html(
+    "Terms | Level Path",
+    """
+    <h1>Terms</h1>
+    <p>Level Path Reviews Ltd, Bristol, United Kingdom. Registered in England.</p>
+    <p>The curator decides what gets covered. A fee buys a guaranteed listen and a written
+    reply; it does not buy placement, and placement is never guaranteed.</p>
+    <p>We never use bots and we do not buy streams, saves or followers for anyone.</p>
+    <p>Refund policy: if we fail to reply within 21 days you will be refunded in full.</p>
+    <time datetime="2026-08-19">Updated 19 August 2026</time>
+    """,
+    description="Level Path terms: curator discretion, refunds, no bots.",
+))
+
+_site("presswire.example")
+PAGES["https://presswire.example/"] = _page(_html(
+    "Press Wire — Music Coverage Packages",
+    """
+    <h1>Press Wire</h1>
+    <p>Press Wire is our magazine's paid-media desk. We offer a guaranteed sponsored article
+    about your release, written by our staff writers and always labelled as sponsored.</p>
+    <p>Pricing: a sponsored article costs $250 per feature. Advertising and sponsorship
+    packages are handled by the same desk.</p>
+    <p><a href="/terms">Terms</a> · <a href="mailto:desk@presswire.example">desk@presswire.example</a></p>
+    <time datetime="2026-08-18">Updated 18 August 2026</time>
+    """,
+    description="Press Wire sells disclosed sponsored articles for music releases.",
+))
+PAGES["https://presswire.example/terms"] = _page(_html(
+    "Terms | Press Wire",
+    """
+    <h1>Terms</h1>
+    <p>Press Wire Media Ltd, Dublin, Ireland. Sponsored coverage is always disclosed as
+    sponsored. Editorial coverage is never for sale.</p>
+    <p>Refund policy: cancellations more than 7 days before publication are refunded.</p>
+    <p>We do not sell streams, playlist placement, saves or followers.</p>
+    """,
+    description="Press Wire terms for sponsored coverage.",
+))
+
+_site("gatedpromo.example")
+PAGES["https://gatedpromo.example/"] = _page(_html(
+    "Gated Promo — Campaign Services",
+    """
+    <h1>Gated Promo</h1>
+    <p>We offer playlist and press campaigns for independent artists. Submit your music
+    through the member dashboard.</p>
+    <p>Pricing is available to members. <a href="/pricing">See pricing</a></p>
+    """,
+    description="Gated Promo campaign services for independent artists.",
+))
+PAGES["https://gatedpromo.example/pricing"] = _page(_html(
+    "Members only | Gated Promo",
+    """
+    <h1>Members only</h1>
+    <p>You must be logged in to view pricing. Please sign in or create an account to continue.</p>
+    """,
+))
+
+_site("honestpromo.example")
+PAGES["https://honestpromo.example/"] = _page(_html(
+    "Honest Promo — Campaign Services",
+    """
+    <h1>Honest Promo</h1>
+    <p>We offer press and playlist pitching for independent artists. Campaigns start at $150.</p>
+    <p>We never sell guaranteed streams, and we do not guarantee placement — the curator
+    decides. Avoid services that guarantee streams: they buy bots.</p>
+    <p><a href="/terms">Terms</a></p>
+    """,
+    description="Honest Promo pitches music to press and playlists.",
+))
+
+_site("promoreview.example")
+PAGES["https://promoreview.example/best-promo-services"] = _page(_html(
+    "Top 10 music promotion services reviewed | Promo Review",
+    """
+    <h1>Top 10 music promotion services reviewed</h1>
+    <p>In this article we reviewed 10 services. One of them promises "guaranteed 50,000
+    Spotify streams" and another claims "placement guaranteed" — how to spot and avoid
+    services that sell guaranteed streams.</p>
+    <p>Read more on our blog.</p>
+    """,
+    description="A review article about music promotion services and their claims.",
+))
+
 _site("pulsewire.example")
 PAGES["https://pulsewire.example/trends/dark-electronic-tiktok"] = _page(_html(
     "Trend watch: dark electronic on TikTok | Pulse Wire",

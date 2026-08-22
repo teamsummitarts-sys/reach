@@ -288,7 +288,8 @@ def merge(entity_type, winner_id, loser_id, rule=MERGE_RULE_MANUAL, tenant_id=No
         raise ValidationError("Cannot merge an entity into itself")
     tenant_id = tenant_id or rbac.current_principal().tenant_id
     table = {"outlet": "outlet", "organization": "organization",
-             "professional_contact": "professional_contact"}.get(entity_type)
+             "professional_contact": "professional_contact",
+             "promotion_service": "promotion_service"}.get(entity_type)
     if table is None:
         raise ValidationError(f"Cannot merge entity type {entity_type}")
 

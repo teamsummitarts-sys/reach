@@ -16,7 +16,7 @@ from . import REACH_VERSION
 from . import (analytics, approvals, audit, campaigns, catalog, clock, compliance,
                contacts, db, drafts, entities, evidence, firewall, firstparty,
                humanactions, jobs, onboarding, outcomes, pipeline, policy, profile,
-               radar, rbac, relationships, scoring, sender)
+               promotion, radar, rbac, relationships, scoring, sender)
 from .errors import ReachError
 from .providers import email as email_provider
 from .providers import search as search_provider
@@ -189,6 +189,10 @@ def _shell(campaign_id=None, active=None):
         # The stepper needs to know where the campaign actually is, which is
         # independent of which tab the user happens to be looking at.
         shell["stage_now"] = campaign_stage(campaign_id)
+        # The layout's paid-promotion link needs the flag itself, not a
+        # `campaign` object: several campaign screens never pass one, and
+        # Jinja's silent Undefined would hide the link there.
+        shell["paid_promotion_enabled"] = promotion.enabled_for(campaign_id)
     return shell
 
 
@@ -310,6 +314,36 @@ def _next_best_actions(qualified, drafted, follow_ups):
             "url": url_for("reach.all_opportunities"),
             "icon": "star",
         })
+    # Paid promotion sits with the other research-review work, above sender
+    # setup: an action appended after the five-item cap would be silently
+    # dropped. Each entry appears only when its count is real.
+    promo = promotion.dashboard_counts()
+    if promo["screened"]:
+        actions.append({
+            "title": f"Review {promo['screened']} screened paid promotion "
+                     f"option{'s' if promo['screened'] != 1 else ''}",
+            "context": "Services REACH screened against public evidence",
+            "url": url_for("reach.promotion_view", campaign_id=promo["campaign_id"]),
+            "icon": "star",
+        })
+    if promo["matched"]:
+        actions.append({
+            "title": f"{promo['matched']} paid promotion service"
+                     f"{'s' if promo['matched'] != 1 else ''} match this release",
+            "context": "Screened, ranked by campaign fit, not yet in your plan",
+            "url": url_for("reach.promotion_view", campaign_id=promo["campaign_id"],
+                           view="best-fit"),
+            "icon": "star",
+        })
+    if promo["review"]:
+        actions.append({
+            "title": f"{promo['review']} promotion service"
+                     f"{'s' if promo['review'] != 1 else ''} require review",
+            "context": "A published policy changed since REACH last screened it",
+            "url": url_for("reach.promotion_screening"),
+            "icon": "shield",
+        })
+
     open_tasks = humanactions.open_count()
     if open_tasks:
         actions.append({
@@ -599,6 +633,9 @@ def create_campaign():
             search_budget=_int(data.get("search_budget")),
             domain_budget=_int(data.get("domain_budget")),
             daily_send_limit=_int(data.get("daily_send_limit")),
+            paid_promotion_enabled=_flag(data.get("paid_promotion_enabled")),
+            promotion_budget_amount=_float(data.get("promotion_budget_amount")),
+            promotion_budget_currency=data.get("promotion_budget_currency") or None,
         )
     except ReachError as exc:
         return _json_error(exc)
@@ -626,6 +663,20 @@ def _int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _float(value):
+    """A blank money field is UNKNOWN, which is a valid answer — never 0."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _flag(value):
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 # --------------------------------------------------------------------------
@@ -979,6 +1030,296 @@ def record_placement(target_id):
 # --------------------------------------------------------------------------
 # global screens
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# paid promotion
+# --------------------------------------------------------------------------
+
+@bp.route("/campaigns/<campaign_id>/promotion")
+def promotion_view(campaign_id):
+    """Screened paid promotion options for one release.
+
+    Safety leads: services are grouped by screening status and campaign fit
+    ranks only inside a group. A sweep is auto-enqueued when one is due, but
+    only for a principal who may run discovery — a page load by anyone else
+    must not quietly spend search quota.
+    """
+    bootstrap()
+    campaign = _campaign_or_404(campaign_id)
+    enabled = promotion.enabled_for(campaign_id)
+    view = request.args.get("view") or "all"
+    if view not in promotion.VIEWS:
+        view = "all"
+
+    sweep_pending = promotion.pending_jobs()
+    if enabled and not sweep_pending and promotion.sweep_due():
+        if rbac.current_principal().can("campaign.run_discovery"):
+            promotion.start_sweep(autostarted=True)
+            sweep_pending = promotion.pending_jobs()
+
+    filters = {
+        "type": request.args.get("type") or None,
+        "genre": request.args.get("genre") or None,
+        "territory": request.args.get("territory") or None,
+        "channel": request.args.get("channel") or None,
+        "price_max": _float(request.args.get("price_max")),
+    }
+    items = []
+    if enabled:
+        promotion.compute_fits(campaign_id, only_missing=True)
+        items = promotion.campaign_services(campaign_id, view=view, filters=filters)
+    return render_template(
+        "reach/promotion.html",
+        campaign=campaign,
+        enabled=enabled,
+        view=view,
+        views=promotion.VIEWS,
+        filters=filters,
+        items=items,
+        promo_state=promotion.state(),
+        search_cap=promotion.SWEEP_SEARCH_CAP,
+        sweep_stale_days=promotion.PROMO_SWEEP_STALE_DAYS,
+        sweep_pending=sweep_pending,
+        plan=promotion.plan_items(campaign_id),
+        totals=promotion.plan_totals(campaign_id),
+        allocation=promotion.suggested_allocation(campaign_id),
+        allocation_categories=promotion.ALLOCATION_CATEGORIES,
+        plan_statuses=promotion.PLAN_STATUSES,
+        endorsement_disclaimer=promotion.ENDORSEMENT_DISCLAIMER,
+        category_promise=promotion.CATEGORY_PROMISE,
+        leaving_reach=promotion.LEAVING_REACH,
+        leaving_reach_detail=promotion.LEAVING_REACH_DETAIL,
+        blocked_statement=promotion.BLOCKED_STATEMENT,
+        blocked_support=promotion.BLOCKED_SUPPORT,
+        unknown_statement=promotion.UNKNOWN_STATEMENT,
+        **_shell(campaign_id, "promotion"),
+    )
+
+
+@bp.route("/campaigns/<campaign_id>/promotion/enable", methods=["POST"])
+def promotion_enable(campaign_id):
+    _campaign_or_404(campaign_id)
+    data = request.get_json(silent=True) or request.form
+    try:
+        promotion.set_campaign_promotion(
+            campaign_id, _flag(data.get("enabled")),
+            budget_amount=data.get("budget_amount"),
+            budget_currency=data.get("budget_currency"),
+        )
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "enabled": promotion.enabled_for(campaign_id)})
+
+
+@bp.route("/campaigns/<campaign_id>/promotion/sweep", methods=["POST"])
+def promotion_sweep(campaign_id):
+    """Chunked drive-loop endpoint: ~20 seconds of work per call."""
+    _campaign_or_404(campaign_id)
+    try:
+        if not promotion.pending_jobs():
+            promotion.start_sweep()
+        processed = promotion.run_to_completion(max_seconds=20)
+        promotion.compute_fits(campaign_id)
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "jobs_processed": processed,
+                    "pending": promotion.pending_jobs(),
+                    "state": promotion.state(),
+                    "services": len(promotion.campaign_services(campaign_id))})
+
+
+@bp.route("/promotion/services/<service_id>")
+def promotion_service(service_id):
+    bootstrap()
+    service = promotion.canonical_service(service_id)
+    if service is None:
+        abort(404)
+    campaign_id = request.args.get("campaign_id") or None
+    fit = promotion.latest_fit(service["id"], campaign_id) if campaign_id else None
+    screening = promotion.latest_screening(service["id"])
+    open_campaigns = [row for row in campaigns.list_campaigns()
+                      if row["status"] not in (campaigns.COMPLETED, campaigns.CANCELLED)]
+    return render_template(
+        "reach/promotion_service.html",
+        service=service,
+        screening=screening,
+        reasons=json.loads(screening["reasons_json"] or "[]") if screening else [],
+        signals=json.loads(screening["signals_json"] or "[]") if screening else [],
+        override=promotion.effective_override(service),
+        stale=promotion.is_stale(service),
+        pricing_current=promotion.pricing_is_current(service),
+        service_types=json.loads(service["service_types_json"] or "[]"),
+        fit_score=fit["score"] if fit and service["screening_status"] != promotion.BLOCKED else None,
+        fit_components=(json.loads(fit["components_json"] or "{}")
+                        if fit and service["screening_status"] != promotion.BLOCKED else None),
+        fit_labels=promotion.FIT_LABELS,
+        evidence_items=evidence.summary("promotion_service", service["id"]),
+        open_campaigns=open_campaigns,
+        allocation_categories=promotion.ALLOCATION_CATEGORIES,
+        tristate_fields=promotion.TRISTATE_FIELDS,
+        endorsement_disclaimer=promotion.ENDORSEMENT_DISCLAIMER,
+        leaving_reach=promotion.LEAVING_REACH,
+        leaving_reach_detail=promotion.LEAVING_REACH_DETAIL,
+        blocked_statement=promotion.BLOCKED_STATEMENT,
+        blocked_support=promotion.BLOCKED_SUPPORT,
+        unknown_statement=promotion.UNKNOWN_STATEMENT,
+        **_shell(campaign_id, "promotion"),
+    )
+
+
+@bp.route("/promotion/services/<service_id>/plan", methods=["POST"])
+def promotion_add_plan(service_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        item_id = promotion.add_plan_item(
+            data.get("campaign_id"), service_id=service_id,
+            category=data.get("category") or "OTHER",
+            amount=data.get("amount"), currency=data.get("currency") or None,
+        )
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "item_id": item_id})
+
+
+@bp.route("/campaigns/<campaign_id>/promotion/plan", methods=["POST"])
+def promotion_add_free_item(campaign_id):
+    """A plan row with no service behind it — "Meta Ads", a manager's retainer."""
+    _campaign_or_404(campaign_id)
+    data = request.get_json(silent=True) or request.form
+    try:
+        item_id = promotion.add_plan_item(
+            campaign_id, label=data.get("label"),
+            category=data.get("category") or "OTHER",
+            amount=data.get("amount"), currency=data.get("currency") or None,
+        )
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "item_id": item_id})
+
+
+@bp.route("/promotion/plan/<item_id>/status", methods=["POST"])
+def promotion_plan_status(item_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        status = promotion.set_plan_status(item_id, data.get("status"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "status": status})
+
+
+@bp.route("/promotion/plan/<item_id>/delete", methods=["POST"])
+def promotion_plan_delete(item_id):
+    try:
+        promotion.remove_plan_item(item_id)
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True})
+
+
+@bp.route("/promotion/services/<service_id>/dismiss", methods=["POST"])
+def promotion_dismiss(service_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        promotion.dismiss(service_id, data.get("campaign_id"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True})
+
+
+@bp.route("/promotion/services/<service_id>/handoff", methods=["POST"])
+def promotion_handoff(service_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        task_id = promotion.create_handoff_task(service_id, data.get("campaign_id"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "task_id": task_id,
+                    "url": url_for("reach.needs_you", campaign_id=data.get("campaign_id"))})
+
+
+@bp.route("/promotion/services/<service_id>/open", methods=["POST"])
+def promotion_open_external(service_id):
+    """Leaving REACH is recorded, and is never treated as a payment."""
+    service = promotion.canonical_service(service_id)
+    if service is None or not service["url"]:
+        abort(404)
+    audit.record("promotion.opened_external", entity_type="promotion_service",
+                 entity_id=service["id"], payload={}, actor_kind=audit.ACTOR_USER)
+    return redirect(service["url"], code=302)
+
+
+@bp.route("/promotion/screening")
+def promotion_screening():
+    bootstrap()
+    rows = []
+    for service in promotion.services():
+        rows.append({
+            "service": service,
+            "override": promotion.effective_override(service),
+            "stale": promotion.is_stale(service),
+            "history": promotion.screening_history(service["id"], limit=6),
+        })
+    return render_template(
+        "reach/promotion_screening.html",
+        rows=rows,
+        review_queue=promotion.review_queue(),
+        suggestions=promotion.merge_suggestions(),
+        statuses=promotion.SCREENING_STATUSES,
+        endorsement_disclaimer=promotion.ENDORSEMENT_DISCLAIMER,
+        **_shell(None, None),
+    )
+
+
+@bp.route("/promotion/services/<service_id>/rescan", methods=["POST"])
+def promotion_rescan(service_id):
+    try:
+        job_id = promotion.request_rescan(service_id)
+        promotion.run_to_completion(max_seconds=20)
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "job_id": job_id})
+
+
+@bp.route("/promotion/services/<service_id>/override", methods=["POST"])
+def promotion_override(service_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        status = promotion.override_screening(service_id, data.get("status"),
+                                              data.get("reason"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "status": status})
+
+
+@bp.route("/promotion/services/<service_id>/review-resolved", methods=["POST"])
+def promotion_review_resolved(service_id):
+    try:
+        promotion.resolve_review(service_id)
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True})
+
+
+@bp.route("/promotion/services/<service_id>/note", methods=["POST"])
+def promotion_note(service_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        promotion.set_note(service_id, data.get("text"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True})
+
+
+@bp.route("/promotion/services/<service_id>/merge", methods=["POST"])
+def promotion_merge(service_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        rbac.require("promotion.screen")
+        merge_id = entities.merge("promotion_service", service_id, data.get("loser_id"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "merge_id": merge_id})
+
 
 @bp.route("/radar")
 def radar_view():

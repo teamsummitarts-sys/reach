@@ -69,6 +69,25 @@
           <input id="domain_budget" type="number" value="8" class="mt-1 w-full rounded-md border border-white/10 bg-[#090909] px-2.5 py-1.5 text-sm">
         </label>
       </div>
+      <div class="mt-4 rounded-lg border border-white/[0.06] bg-white/5 px-3 py-2.5">
+        <label class="flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-300">
+          <input id="paid_promotion_enabled" type="checkbox" class="h-4 w-4 rounded border-white/20 bg-[#171719]">
+          Include paid promotion opportunities
+        </label>
+        <p class="mt-1 text-[11px] text-faint">
+          Off by default. REACH researches legitimate paid submission, promotion and advertising
+          services and blocks the ones where it finds guarantee evidence. You can turn this on later.
+        </p>
+        <div class="mt-2 flex flex-wrap items-end gap-2">
+          <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Promotion budget</span>
+            <input id="promotion_budget_amount" type="number" step="0.01" placeholder="blank = UNKNOWN"
+                   class="mt-1 w-40 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100 placeholder:text-faint"></label>
+          <label class="block"><span class="text-[10px] uppercase tracking-[0.18em] text-gray-400">Currency</span>
+            <input id="promotion_budget_currency" maxlength="3" placeholder="USD"
+                   class="mt-1 w-20 rounded-md border border-white/10 bg-[#090909] px-2 py-1 text-xs text-gray-100 placeholder:text-faint"></label>
+        </div>
+      </div>
+
       <div class="mt-4">
         <span class="text-xs font-semibold text-gray-300">Channels</span>
         <div class="mt-2 flex flex-wrap gap-1.5">
@@ -159,6 +178,9 @@
       channels: channels,
       search_budget: document.getElementById('search_budget').value,
       domain_budget: document.getElementById('domain_budget').value,
+      paid_promotion_enabled: document.getElementById('paid_promotion_enabled').checked ? '1' : '0',
+      promotion_budget_amount: document.getElementById('promotion_budget_amount').value,
+      promotion_budget_currency: document.getElementById('promotion_budget_currency').value,
     });
     button.disabled = false;
     if (data.ok) { window.location = data.url; }

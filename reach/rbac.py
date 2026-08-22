@@ -41,6 +41,8 @@ PERMISSIONS = {
     "autopilot.enable": {OWNER},
     "human_task.complete": {OWNER, ADMIN, CAMPAIGN_MANAGER, REVIEWER},
     "outcome.record": {OWNER, ADMIN, CAMPAIGN_MANAGER, REVIEWER},
+    "promotion.plan": {OWNER, ADMIN, CAMPAIGN_MANAGER},
+    "promotion.screen": {OWNER, ADMIN, CAMPAIGN_MANAGER},
     "analytics.view": {OWNER, ADMIN, CAMPAIGN_MANAGER, REVIEWER, ANALYST, VIEW_ONLY},
     "relationship.view": {OWNER, ADMIN, CAMPAIGN_MANAGER, REVIEWER, ANALYST},
     "data.delete": {OWNER, ADMIN},
