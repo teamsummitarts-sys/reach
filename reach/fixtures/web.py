@@ -420,3 +420,24 @@ PAGES["https://wavesignal.example/notes/cold-veil-live"] = _page(_html(
     """,
     description="Wave Signal on Cold Veil's Fault Lines festival set.",
 ))
+
+# ---------------------------------------------------------------------------
+# 20. Radar Trend Watch: a strategy article ABOUT TikTok, on a blog. The
+#     platform itself stays excluded; the public web writing about it is the
+#     in-scope trend source.
+# ---------------------------------------------------------------------------
+_site("pulsewire.example")
+PAGES["https://pulsewire.example/trends/dark-electronic-tiktok"] = _page(_html(
+    "Trend watch: dark electronic on TikTok | Pulse Wire",
+    """
+    <h1>Trend watch: dark electronic on TikTok</h1>
+    <p>Sped-up edits of dark electronic tracks are going viral on TikTok this
+    quarter, and the pattern is consistent: fifteen-second loops cut to the
+    drop, captioned with scene in-jokes, reposted by fan edit accounts.</p>
+    <p>Labels tell Pulse Wire the strategy that works is seeding the loop to
+    small edit accounts before any official post.</p>
+    <p>Tips for the desk: <a href="mailto:desk@pulsewire.example">desk@pulsewire.example</a></p>
+    <time datetime="2026-08-18">Published 18 August 2026</time>
+    """,
+    description="Pulse Wire's trend report on dark electronic going viral on TikTok.",
+))

@@ -1005,10 +1005,12 @@ def radar_view():
         max_watched=radar.MAX_WATCHED,
         radar_state=radar.state(),
         search_cap=radar.SWEEP_SEARCH_CAP,
+        trend_search_cap=radar.TREND_SEARCH_CAP,
         sweep_stale_days=radar.SWEEP_STALE_DAYS,
         sweep_pending=sweep_pending,
         seeded=seeded,
         events=radar.events(),
+        trend_events=radar.trend_events(),
         open_campaigns=open_campaigns,
         **_shell(None, None),
     )

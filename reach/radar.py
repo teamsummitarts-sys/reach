@@ -6,6 +6,13 @@ premieres, interviews, reviews, playlist announcements. Every find is a
 receipted coverage event backed by an evidence packet, and any event can be
 turned into a campaign target whose evidence is that coverage.
 
+Trend Watch extends the sweep with a genre-level query family: when something
+works on TikTok or Instagram for artists in a lane, the public web writes about
+it, and Radar collects those ARTICLES — from blogs and magazines — as receipted
+trend findings. REACH reports what the pages say, with quotes and sources. It
+never generates advice, never scrapes the social platforms themselves (they
+stay behind the platform-domain filter), and never fabricates a trend.
+
 Radar is read-only research. It reuses the existing search provider (quota
 accounted), the existing fetcher (SSRF guards, robots, rate limits), the
 existing page-state gate and platform-domain filter, and the existing durable
@@ -19,13 +26,19 @@ from . import audit, clock, crypto, db, entities, evidence, extractor, fetcher, 
 from .errors import FetchBlocked, ValidationError
 from .providers import search as search_provider
 
-RADAR_VERSION = "radar/1.0.0"
+RADAR_VERSION = "radar/1.1.0"
 
 # Hard product limits, enforced in code and surfaced on the Radar screen.
+# The trend family has its own cap inside the total, and both spends are
+# reported separately so neither can hide inside the other.
 MAX_WATCHED = 20
-SWEEP_SEARCH_CAP = 60
+SWEEP_SEARCH_CAP = 80
+TREND_SEARCH_CAP = 20
 SWEEP_STALE_DAYS = 7
 QUERIES_PER_ARTIST = 3
+
+FAMILY_ARTIST = "ARTIST"
+FAMILY_TREND = "TREND"
 
 SOURCE_PROFILE = "PROFILE"
 SOURCE_USER = "USER"
@@ -39,9 +52,10 @@ ARTICLE = "ARTICLE"
 PREMIERE = "PREMIERE"
 INTERVIEW = "INTERVIEW"
 PLAYLIST = "PLAYLIST"
+TREND = "TREND"
 KIND_UNKNOWN = "UNKNOWN"
 
-COVERAGE_KINDS = [ARTICLE, PREMIERE, INTERVIEW, PLAYLIST, KIND_UNKNOWN]
+COVERAGE_KINDS = [ARTICLE, PREMIERE, INTERVIEW, PLAYLIST, TREND, KIND_UNKNOWN]
 
 # Ordered: the first matching rule wins, and the more specific coverage kinds
 # are tested before the generic ARTICLE signals.
@@ -62,6 +76,19 @@ def classify_kind(title, text):
     for kind, pattern in _KIND_RULES:
         if pattern.search(text or ""):
             return kind
+    return KIND_UNKNOWN
+
+
+# TREND is claimed only when the page clearly says it is about a trend,
+# strategy or pattern. A page that merely matched a trend query is UNKNOWN.
+_TREND_PATTERN = re.compile(
+    r"\btrends?\b|\btrending\b|\bviral\b|\bstrateg(?:y|ies)\b|\bplaybook\b|"
+    r"\bblowing\s+up\b|\bbreaking\s+on\b", re.I)
+
+
+def classify_trend_kind(title, text):
+    if _TREND_PATTERN.search(title or "") or _TREND_PATTERN.search(text or ""):
+        return TREND
     return KIND_UNKNOWN
 
 
@@ -195,7 +222,8 @@ def state(tenant_id=None):
     row = db.query_one("SELECT * FROM radar_state WHERE tenant_id = ?", (tenant_id,))
     if row is None:
         return {"tenant_id": tenant_id, "last_sweep_started_at": None,
-                "last_sweep_finished_at": None, "searches_used": 0}
+                "last_sweep_finished_at": None, "searches_used": 0,
+                "trend_searches_used": 0}
     return dict(row)
 
 
@@ -205,7 +233,8 @@ def _set_state(tenant_id, **fields):
     fields["updated_at"] = clock.now_iso()
     if existing is None:
         payload = {"tenant_id": tenant_id, "last_sweep_started_at": None,
-                   "last_sweep_finished_at": None, "searches_used": 0}
+                   "last_sweep_finished_at": None, "searches_used": 0,
+                   "trend_searches_used": 0}
         payload.update(fields)
         db.insert("radar_state", payload)
     else:
@@ -214,11 +243,12 @@ def _set_state(tenant_id, **fields):
                    tuple(fields.values()) + (tenant_id,))
 
 
-def _spend_search(tenant_id):
+def _spend_search(tenant_id, trend=False):
     db.execute(
-        "UPDATE radar_state SET searches_used = searches_used + 1, updated_at = ? "
+        "UPDATE radar_state SET searches_used = searches_used + 1, "
+        "trend_searches_used = trend_searches_used + ?, updated_at = ? "
         "WHERE tenant_id = ?",
-        (clock.now_iso(), tenant_id),
+        (1 if trend else 0, clock.now_iso(), tenant_id),
     )
 
 
@@ -257,6 +287,64 @@ def plan_artist_queries(name):
     ]
 
 
+def _profile_genres(tenant_id):
+    """(primary genres, microgenres) the user actually supplied, across every
+    track profile. A genre nobody entered produces no trend query."""
+    import json
+
+    primaries, micros = [], []
+    rows = db.query(
+        "SELECT f.field, f.value_json FROM track_profile_field f "
+        "JOIN track_profile p ON p.id = f.profile_id "
+        "WHERE p.tenant_id = ? AND f.field IN ('primary_genre', 'microgenres') "
+        "ORDER BY p.created_at, f.generated_at",
+        (tenant_id,),
+    )
+    for row in rows:
+        try:
+            value = json.loads(row["value_json"]) if row["value_json"] else None
+        except (TypeError, ValueError):
+            continue
+        if row["field"] == "primary_genre" and value:
+            primaries.append(str(value).strip())
+        elif row["field"] == "microgenres" and value:
+            micros.extend(str(item).strip() for item in value if str(item).strip())
+    return primaries, micros
+
+
+def plan_trend_queries(tenant_id):
+    """The trend family: what the public web writes about the artist's lane.
+
+    Genre queries come only from profile values the user supplied; artist
+    queries only from the watchlist. Capped at TREND_SEARCH_CAP — the trend
+    family may never eat the per-artist coverage budget.
+    """
+    primaries, micros = _profile_genres(tenant_id)
+    queries = []
+    seen = set()
+
+    def add(text, genre_tag=None, artist=None):
+        key = text.lower()
+        if key in seen or len(queries) >= TREND_SEARCH_CAP:
+            return
+        seen.add(key)
+        queries.append({
+            "query": text,
+            "genre_tag": genre_tag,
+            "artist_id": artist["id"] if artist else None,
+            "artist_name": artist["name"] if artist else None,
+        })
+
+    for genre in dict.fromkeys(primaries):
+        add(f'"{genre}" tiktok trend', genre_tag=genre)
+        add(f'"{genre}" viral', genre_tag=genre)
+    for micro in dict.fromkeys(micros):
+        add(f'"{micro}" playlist trend', genre_tag=micro)
+    for artist in watched(tenant_id, active_only=True):
+        add(f'"{artist["name"]}" viral OR tiktok', artist=artist)
+    return queries
+
+
 def start_sweep(tenant_id=None):
     """Enqueue a sweep as durable jobs. Draining happens in bounded chunks via
     :func:`run_to_completion`, exactly like discovery."""
@@ -278,22 +366,40 @@ def _radar_sweep(context):
         return None
     tenant_id = context.tenant_id
     artists = watched(tenant_id, active_only=True)
-    _set_state(tenant_id, last_sweep_started_at=clock.now_iso(), searches_used=0)
+    _set_state(tenant_id, last_sweep_started_at=clock.now_iso(),
+               searches_used=0, trend_searches_used=0)
 
     queries = 0
     for artist in artists:
         for query in plan_artist_queries(artist["name"]):
             context.enqueue("RADAR_SEARCH", {
+                "family": FAMILY_ARTIST,
                 "artist_id": artist["id"],
                 "artist_name": artist["name"],
                 "query": query,
                 "sweep_id": context.id,
             }, idempotency_key=f"radar:search:{context.id}:{query}")
             queries += 1
-    context.progress(0, queries, "Sweeping coverage of watched artists")
+
+    trend_queries = plan_trend_queries(tenant_id)
+    for planned in trend_queries:
+        context.enqueue("RADAR_SEARCH", {
+            "family": FAMILY_TREND,
+            "artist_id": planned["artist_id"],
+            "artist_name": planned["artist_name"],
+            "genre_tag": planned["genre_tag"],
+            "query": planned["query"],
+            "sweep_id": context.id,
+        }, idempotency_key=f"radar:search:{context.id}:{planned['query']}")
+        queries += 1
+
+    context.progress(0, queries, "Sweeping coverage and trends for your lane")
     audit.record("radar.sweep_planned", entity_type="job_run", entity_id=context.id,
-                 payload={"artists": len(artists), "queries": queries})
-    return {"artists": len(artists), "queries": queries, "search_cap": SWEEP_SEARCH_CAP}
+                 payload={"artists": len(artists), "queries": queries,
+                          "trend_queries": len(trend_queries)})
+    return {"artists": len(artists), "queries": queries,
+            "trend_queries": len(trend_queries),
+            "search_cap": SWEEP_SEARCH_CAP, "trend_search_cap": TREND_SEARCH_CAP}
 
 
 @jobs.register("RADAR_SEARCH")
@@ -301,15 +407,21 @@ def _radar_search(context):
     if context.cancelled():
         return None
     tenant_id = context.tenant_id
-    used = state(tenant_id)["searches_used"]
+    family = context.payload.get("family", FAMILY_ARTIST)
+    current = state(tenant_id)
+    used = current["searches_used"]
     if used >= SWEEP_SEARCH_CAP:
         # The cap is a stop rule, not a failure: the skip is recorded so the
         # sweep result states plainly that the budget ran out.
         return {"skipped": "SEARCH_CAP", "searches_used": used, "cap": SWEEP_SEARCH_CAP}
+    if family == FAMILY_TREND and current["trend_searches_used"] >= TREND_SEARCH_CAP:
+        return {"skipped": "TREND_CAP",
+                "trend_searches_used": current["trend_searches_used"],
+                "cap": TREND_SEARCH_CAP}
 
     query = context.payload["query"]
     response = search_provider.search(query, limit=8)
-    _spend_search(tenant_id)
+    _spend_search(tenant_id, trend=family == FAMILY_TREND)
     context.cost(searches=1)
 
     enqueued = 0
@@ -323,23 +435,28 @@ def _radar_search(context):
         except FetchBlocked:
             continue
         if entities.is_platform_domain(validated["domain"]):
-            # Coverage lives on the open web. A platform page is never a
-            # coverage source, exactly as it is never an outlet.
+            # Coverage and trend articles live on the open web. A platform
+            # page — tiktok.com and instagram.com included — is never a
+            # source, exactly as it is never an outlet. Articles ABOUT those
+            # platforms, on blogs, are in scope; the platforms are not.
             platform_skipped += 1
             continue
         context.enqueue("RADAR_FETCH", {
             "url": url,
-            "artist_id": context.payload["artist_id"],
-            "artist_name": context.payload["artist_name"],
+            "family": family,
+            "artist_id": context.payload.get("artist_id"),
+            "artist_name": context.payload.get("artist_name"),
+            "genre_tag": context.payload.get("genre_tag"),
             "sweep_id": context.payload.get("sweep_id"),
         }, idempotency_key=(
             f"radar:fetch:{context.payload.get('sweep_id')}:"
-            f"{context.payload['artist_id']}:{url}"
+            f"{context.payload.get('artist_id') or context.payload.get('genre_tag')}:{url}"
         ))
         enqueued += 1
 
     return {
         "query": query,
+        "family": family,
         "results": len(response.items),
         "fetch_jobs": enqueued,
         "platform_skipped": platform_skipped,
@@ -371,14 +488,21 @@ def coverage_dedup_key(artist_id, url):
     return crypto.url_hash(f"{artist_id}|{url}")
 
 
+def trend_dedup_key(genre_tag, url):
+    """One genre-level trend event per (genre tag, canonical URL)."""
+    return crypto.url_hash(f"trend|{genre_tag}|{url}")
+
+
 @jobs.register("RADAR_FETCH")
 def _radar_fetch(context):
     if context.cancelled():
         return None
     tenant_id = context.tenant_id
     url = context.payload["url"]
-    artist_id = context.payload["artist_id"]
-    artist_name = context.payload["artist_name"]
+    family = context.payload.get("family", FAMILY_ARTIST)
+    artist_id = context.payload.get("artist_id")
+    artist_name = context.payload.get("artist_name")
+    genre_tag = context.payload.get("genre_tag")
 
     try:
         result = fetcher.fetch(url)
@@ -414,26 +538,45 @@ def _radar_fetch(context):
         # Belt to the search-stage filter: a redirect can land on a platform.
         return {"skipped": "PLATFORM_DOMAIN", "domain": result.domain}
 
-    excerpt = _mention_excerpt(sanitized["visible_text"], artist_name)
-    if excerpt is None:
-        return {"skipped": "NO_ARTIST_MENTION", "url": result.final_url}
+    # The receipt gate: the page must actually mention what the event claims
+    # it is about — the watched artist, or for genre-level trend findings the
+    # genre itself. No mention, no event; relevance is never fabricated.
+    if artist_name:
+        excerpt = _mention_excerpt(sanitized["visible_text"], artist_name)
+        if excerpt is None:
+            return {"skipped": "NO_ARTIST_MENTION", "url": result.final_url}
+    else:
+        excerpt = _mention_excerpt(sanitized["visible_text"], genre_tag)
+        if excerpt is None:
+            return {"skipped": "NO_GENRE_MENTION", "url": result.final_url}
 
     title = sanitized["title"]
-    kind = classify_kind(title, sanitized["visible_text"])
-    dedup = coverage_dedup_key(artist_id, result.final_url)
+    if family == FAMILY_TREND:
+        kind = classify_trend_kind(title, sanitized["visible_text"])
+    else:
+        kind = classify_kind(title, sanitized["visible_text"])
+    if artist_id:
+        dedup = coverage_dedup_key(artist_id, result.final_url)
+    else:
+        dedup = trend_dedup_key(genre_tag, result.final_url)
 
     existing = db.query_one(
-        "SELECT id FROM coverage_event WHERE tenant_id = ? AND dedup_key = ?",
+        "SELECT id, kind FROM coverage_event WHERE tenant_id = ? AND dedup_key = ?",
         (tenant_id, dedup),
     )
     if existing is not None:
-        db.update("coverage_event", existing["id"], {"retrieved_at": clock.now_iso()})
+        payload = {"retrieved_at": clock.now_iso()}
+        # A later pass may find a clear signal an earlier one lacked. UNKNOWN
+        # upgrades to a classified kind; a classified kind never downgrades.
+        if existing["kind"] == KIND_UNKNOWN and kind != KIND_UNKNOWN:
+            payload["kind"] = kind
+        db.update("coverage_event", existing["id"], payload)
         return {"event_id": existing["id"], "deduped": True, "url": result.final_url}
 
     event_id = db.new_id("cov")
     evidence_id = evidence.record(
         entity_type="coverage_event", entity_id=event_id, supports_field="coverage",
-        value={"artist": artist_name, "kind": kind, "title": title},
+        value={"artist": artist_name, "genre": genre_tag, "kind": kind, "title": title},
         source_url=result.final_url, source_domain=result.domain,
         source_type="OFFICIAL", excerpt=excerpt,
         confidence=0.7 if kind != KIND_UNKNOWN else 0.5,
@@ -444,6 +587,7 @@ def _radar_fetch(context):
         "id": event_id,
         "tenant_id": tenant_id,
         "watched_artist_id": artist_id,
+        "genre_tag": genre_tag,
         "outlet_id": None,
         "url": result.final_url,
         "domain": result.domain,
@@ -458,7 +602,8 @@ def _radar_fetch(context):
     })
     audit.record("radar.coverage_recorded", entity_type="coverage_event",
                  entity_id=event_id,
-                 payload={"artist": artist_name, "domain": result.domain, "kind": kind})
+                 payload={"artist": artist_name, "genre": genre_tag,
+                          "domain": result.domain, "kind": kind})
     return {"event_id": event_id, "kind": kind, "url": result.final_url}
 
 
@@ -498,25 +643,46 @@ def _maybe_finish(tenant_id):
     finished = current["last_sweep_finished_at"]
     if started and (not finished or finished < started):
         _set_state(tenant_id, last_sweep_finished_at=clock.now_iso())
+        final = state(tenant_id)
         audit.record("radar.sweep_finished", entity_type="radar_state", entity_id=tenant_id,
-                     payload={"searches_used": state(tenant_id)["searches_used"],
-                              "search_cap": SWEEP_SEARCH_CAP})
+                     payload={"searches_used": final["searches_used"],
+                              "trend_searches_used": final["trend_searches_used"],
+                              "search_cap": SWEEP_SEARCH_CAP,
+                              "trend_search_cap": TREND_SEARCH_CAP})
 
 
 # --------------------------------------------------------------------------
 # events
 # --------------------------------------------------------------------------
 
+_EVENT_SELECT = (
+    "SELECT ce.*, w.name AS artist_name, o.name AS outlet_name, "
+    "t.campaign_id AS targeted_campaign_id "
+    "FROM coverage_event ce "
+    "LEFT JOIN watched_artist w ON w.id = ce.watched_artist_id "
+    "LEFT JOIN outlet o ON o.id = ce.outlet_id "
+    "LEFT JOIN campaign_target t ON t.id = ce.targeted_target_id "
+    "WHERE ce.tenant_id = ? "
+)
+
+
 def events(tenant_id=None, limit=200):
+    """Artist coverage events — the v1 feed. Trend findings live in
+    :func:`trend_events`."""
     tenant_id = tenant_id or rbac.current_principal().tenant_id
     return db.query(
-        "SELECT ce.*, w.name AS artist_name, o.name AS outlet_name, "
-        "t.campaign_id AS targeted_campaign_id "
-        "FROM coverage_event ce "
-        "JOIN watched_artist w ON w.id = ce.watched_artist_id "
-        "LEFT JOIN outlet o ON o.id = ce.outlet_id "
-        "LEFT JOIN campaign_target t ON t.id = ce.targeted_target_id "
-        "WHERE ce.tenant_id = ? "
+        _EVENT_SELECT + "AND ce.watched_artist_id IS NOT NULL AND ce.kind != 'TREND' "
+        "ORDER BY ce.retrieved_at DESC, ce.rowid DESC LIMIT ?",
+        (tenant_id, limit),
+    )
+
+
+def trend_events(tenant_id=None, limit=200):
+    """Trend findings for the artist's lane: every genre-level event, plus
+    artist events whose page is clearly about a trend."""
+    tenant_id = tenant_id or rbac.current_principal().tenant_id
+    return db.query(
+        _EVENT_SELECT + "AND (ce.kind = 'TREND' OR ce.watched_artist_id IS NULL) "
         "ORDER BY ce.retrieved_at DESC, ce.rowid DESC LIMIT ?",
         (tenant_id, limit),
     )
@@ -525,7 +691,7 @@ def events(tenant_id=None, limit=200):
 def get_event(event_id):
     return db.query_one(
         "SELECT ce.*, w.name AS artist_name FROM coverage_event ce "
-        "JOIN watched_artist w ON w.id = ce.watched_artist_id WHERE ce.id = ?",
+        "LEFT JOIN watched_artist w ON w.id = ce.watched_artist_id WHERE ce.id = ?",
         (event_id,),
     )
 
@@ -558,9 +724,10 @@ def target_event(event_id, campaign_id):
                     "campaign_id": existing["campaign_id"], "status": existing["status"],
                     "already_targeted": True}
 
+    subject = event["artist_name"] or event["genre_tag"] or "the artist's lane"
     jobs.enqueue("FETCH_PUBLIC_PAGE", {
         "url": event["url"],
-        "query": f'radar coverage of {event["artist_name"]}',
+        "query": f"radar coverage of {subject}",
         "family": "RADAR",
     }, idempotency_key=f"fetch:{campaign_id}:{event['url']}", campaign_id=campaign_id)
     pipeline.run_to_completion(campaign_id, max_seconds=20)
@@ -581,10 +748,14 @@ def target_event(event_id, campaign_id):
             "was refused or the page was unusable. Nothing was invented in its place."
         )
 
+    # Artist coverage supports peer_coverage; a genre-level trend finding is
+    # its own field — it says the outlet writes about the lane, not that it
+    # covered a watched artist.
     evidence.record(
-        entity_type="outlet", entity_id=outlet["id"], supports_field="peer_coverage",
-        value={"artist": event["artist_name"], "title": event["title"],
-               "kind": event["kind"]},
+        entity_type="outlet", entity_id=outlet["id"],
+        supports_field="peer_coverage" if event["watched_artist_id"] else "trend_coverage",
+        value={"artist": event["artist_name"], "genre": event["genre_tag"],
+               "title": event["title"], "kind": event["kind"]},
         source_url=event["url"], source_domain=event["domain"], source_type="OFFICIAL",
         excerpt=event["excerpt"], confidence=0.7, extractor_version=RADAR_VERSION,
         tenant_id=event["tenant_id"],
