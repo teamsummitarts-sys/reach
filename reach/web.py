@@ -16,7 +16,7 @@ from . import REACH_VERSION
 from . import (analytics, approvals, audit, campaigns, catalog, clock, compliance,
                contacts, db, drafts, entities, evidence, firewall, firstparty,
                humanactions, jobs, onboarding, outcomes, pipeline, policy, profile,
-               rbac, relationships, scoring, sender)
+               radar, rbac, relationships, scoring, sender)
 from .errors import ReachError
 from .providers import email as email_provider
 from .providers import search as search_provider
@@ -979,6 +979,86 @@ def record_placement(target_id):
 # --------------------------------------------------------------------------
 # global screens
 # --------------------------------------------------------------------------
+
+@bp.route("/radar")
+def radar_view():
+    """Peer Radar: who is covering the artists in your lane.
+
+    First visit seeds the watchlist from the track profiles' comparable
+    artists. A sweep older than the staleness window (or never run) is
+    auto-enqueued here and drained by the page's drive loop — the same
+    chunked pattern discovery uses, so no request can outlive the server's
+    timeout.
+    """
+    bootstrap()
+    seeded = radar.seed_from_profiles()
+    sweep_pending = radar.pending_jobs()
+    if not sweep_pending and radar.sweep_due():
+        radar.start_sweep()
+        sweep_pending = radar.pending_jobs()
+    open_campaigns = [row for row in campaigns.list_campaigns()
+                      if row["status"] not in (campaigns.COMPLETED, campaigns.CANCELLED)]
+    return render_template(
+        "reach/radar.html",
+        watchlist=radar.watched(active_only=False),
+        active_count=radar.active_count(),
+        max_watched=radar.MAX_WATCHED,
+        radar_state=radar.state(),
+        search_cap=radar.SWEEP_SEARCH_CAP,
+        sweep_stale_days=radar.SWEEP_STALE_DAYS,
+        sweep_pending=sweep_pending,
+        seeded=seeded,
+        events=radar.events(),
+        open_campaigns=open_campaigns,
+        **_shell(None, None),
+    )
+
+
+@bp.route("/radar/watch", methods=["POST"])
+def radar_watch():
+    data = request.get_json(silent=True) or request.form
+    try:
+        artist_id = radar.add_artist(data.get("name"))
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "artist_id": artist_id})
+
+
+@bp.route("/radar/watch/<artist_id>/deactivate", methods=["POST"])
+def radar_deactivate(artist_id):
+    try:
+        radar.deactivate_artist(artist_id)
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True})
+
+
+@bp.route("/radar/sweep", methods=["POST"])
+def radar_sweep():
+    """Start a sweep, or resume one — draining at most ~20 seconds per call.
+    The page keeps calling until nothing is pending."""
+    try:
+        if not radar.pending_jobs():
+            radar.start_sweep()
+        processed = radar.run_to_completion(max_seconds=20)
+    except ReachError as exc:
+        return _json_error(exc)
+    return jsonify({"ok": True, "jobs_processed": processed,
+                    "pending": radar.pending_jobs(),
+                    "state": radar.state(), "events": len(radar.events())})
+
+
+@bp.route("/radar/events/<event_id>/target", methods=["POST"])
+def radar_target(event_id):
+    data = request.get_json(silent=True) or request.form
+    try:
+        result = radar.target_event(event_id, data.get("campaign_id"))
+    except ReachError as exc:
+        return _json_error(exc)
+    result["url"] = url_for("reach.target_detail", campaign_id=result["campaign_id"],
+                            target_id=result["target_id"])
+    return jsonify({"ok": True, **result})
+
 
 @bp.route("/needs-you")
 def needs_you():
