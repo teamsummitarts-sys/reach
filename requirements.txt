@@ -1,4 +1,0 @@
-flask
-cryptography
-dnspython
-gunicorn
