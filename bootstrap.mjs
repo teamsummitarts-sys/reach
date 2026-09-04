@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 
 const encryptedBundle = "street-banker-v2-render.enc";
 const decryptedBundle = "street-banker-v2-render.tar.gz";
-const expectedSha256 = "5c606e8158d69dbff4932f41944a58e0efb2064baeb8dc3bf274140f2230700f";
+const expectedSha256 = "c0ce0cfb6187e0f61be6440dde7a13185aa6f7b3afdc600134e1f42aa78042df";
 
 if (!process.env.V2_BUNDLE_KEY) {
   throw new Error("V2_BUNDLE_KEY is required to unpack this deployment bundle");
