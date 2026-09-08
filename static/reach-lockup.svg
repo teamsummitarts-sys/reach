@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">REACH by Street Banker</title>
+  <desc id="desc">REACH full brand lockup with music opportunities positioning.</desc>
+  <defs>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a0908"/><stop offset=".55" stop-color="#1a1713"/><stop offset="1" stop-color="#060606"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8a6424"/><stop offset=".45" stop-color="#d4aa53"/><stop offset=".7" stop-color="#f1d18a"/><stop offset="1" stop-color="#9a712c"/></linearGradient>
+    <radialGradient id="orb" cx="38%" cy="35%" r="70%"><stop offset="0" stop-color="#fff1c7"/><stop offset=".18" stop-color="#cba96c"/><stop offset=".45" stop-color="#7f5f2c"/><stop offset=".72" stop-color="#17130f"/><stop offset="1" stop-color="#050505"/></radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000" flood-opacity=".18"/></filter>
+  </defs>
+  <rect width="1600" height="920" fill="#fbfaf7"/>
+  <g filter="url(#shadow)">
+    <text x="800" y="480" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="330" font-weight="900" letter-spacing="-25" fill="url(#ink)">REACH</text>
+    <path d="M475 318h265l-34 68H475z" fill="#0c0b0a"/>
+    <path d="M475 420h228l-28 55H475z" fill="url(#gold)" opacity=".95"/>
+    <path d="M475 505h198l-28 55H475z" fill="#0c0b0a"/>
+    <line x1="603" y1="433" x2="1458" y2="433" stroke="url(#gold)" stroke-width="8"/>
+    <circle cx="804" cy="433" r="42" fill="url(#orb)" stroke="#23180c" stroke-width="4"/>
+    <line x1="1456" y1="411" x2="1456" y2="455" stroke="#8d6829" stroke-width="8"/>
+  </g>
+  <text x="800" y="615" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="48" letter-spacing="20" fill="#171512">MUSIC OPPORTUNITIES. AUTOMATICALLY.</text>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="10" fill="#171512" text-anchor="middle">
+    <text x="190" y="700">PLAYLISTS</text><text x="455" y="700">MAGAZINES</text><text x="700" y="700">VLOGS</text><text x="905" y="700">BLOGS</text><text x="1125" y="700">RADIO</text><text x="1370" y="700">MORE</text>
+  </g>
+  <g stroke="#181614" stroke-width="2"><line x1="320" y1="675" x2="320" y2="712"/><line x1="575" y1="675" x2="575" y2="712"/><line x1="805" y1="675" x2="805" y2="712"/><line x1="1015" y1="675" x2="1015" y2="712"/><line x1="1250" y1="675" x2="1250" y2="712"/></g>
+  <line x1="175" y1="775" x2="505" y2="775" stroke="#29251f" stroke-width="2"/><line x1="1095" y1="775" x2="1425" y2="775" stroke="#29251f" stroke-width="2"/>
+  <text x="800" y="790" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="33" letter-spacing="16" fill="#171512">SUBMIT SMARTER. GO FURTHER.</text>
+  <text x="800" y="875" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="25" letter-spacing="12" fill="#171512">BY STREET BANKER</text>
+</svg>
